@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
 	AuthStorage,
@@ -98,6 +99,16 @@ export class PiAgentService {
 		return model;
 	}
 
+	private getAgentAppendSystemPromptPaths(): string[] {
+		const appendSystemPromptPath = join(this.config.agentResourceDir, "append-system-prompt.md");
+		return existsSync(appendSystemPromptPath) ? [appendSystemPromptPath] : [];
+	}
+
+	private getAgentSkillPaths(): string[] {
+		const skillsDir = join(this.config.agentResourceDir, "skills");
+		return existsSync(skillsDir) ? [skillsDir] : [];
+	}
+
 	async createRequestSession(userId: string, sessionId: string): Promise<CreateAgentSessionResult> {
 		const sessionPath = await this.sessionStore.getSessionPath(userId, sessionId);
 		if (!sessionPath) {
@@ -107,7 +118,8 @@ export class PiAgentService {
 		const paths = this.userWorkspaceService.ensureUserReady(userId);
 		const resourceLoader = new DefaultResourceLoader({
 			agentDir: this.config.systemDataDir,
-			appendSystemPrompt: [],
+			additionalSkillPaths: this.getAgentSkillPaths(),
+			appendSystemPrompt: this.getAgentAppendSystemPromptPaths(),
 			cwd: paths.workspaceDir,
 			extensionFactories: [createWorkspaceSandboxExtension(paths.workspaceDir)],
 			noContextFiles: true,

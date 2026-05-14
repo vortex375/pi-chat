@@ -46,7 +46,17 @@ pi-chat/
 - Session and workspace data live under `data/` inside the repository by default.
 - The prototype uses the `anonymous` user and provisions one workspace for that user.
 - Shell execution is sandboxed with `bubblewrap`, and file tools are restricted to the user workspace.
+- Backend-managed custom instructions and skills live under `templates/agent-resources/` and are synchronized into `data/system/agent-resources/` during backend startup.
 - In production, the API serves the built frontend from `apps/web/dist`.
+
+### Custom Backend Instructions And Skills
+
+To customize the backend agent without allowing workspace-controlled prompt injection:
+
+- edit `templates/agent-resources/append-system-prompt.md` to add instructions that should be appended to the backend agent's base system prompt
+- add skill directories under `templates/agent-resources/skills/`; each skill directory should contain a `SKILL.md` file and any supporting scripts or reference files
+
+These files are synchronized into `data/system/agent-resources/` during backend startup. Restart the backend after changing them.
 
 ### Required Environment Variables
 

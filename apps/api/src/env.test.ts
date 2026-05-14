@@ -35,6 +35,8 @@ describe("loadEnv", () => {
 
 		expect(config.port).toBe(4321);
 		expect(config.workspaceTemplateDir).toBe(templateDir);
+		expect(config.agentResourceTemplateDir).toBe(join(config.projectRoot, "templates", "agent-resources"));
+		expect(config.agentResourceDir).toBe(join(root, "data", "system", "agent-resources"));
 		expect(config.sandboxRequired).toBe(false);
 	});
 
@@ -48,6 +50,7 @@ describe("loadEnv", () => {
 			envFilePath,
 			[
 				"PORT=4545",
+				`PI_CHAT_DATA_ROOT=${join(root, "data")}`,
 				`PI_CHAT_TEMPLATE_ROOT=${templateDir}`,
 				"PI_MODEL_ID=openai/gpt-oss-120b",
 				"PI_OPENAI_BASE_URL=https://openrouter.ai/api/v1",
@@ -60,6 +63,8 @@ describe("loadEnv", () => {
 
 		expect(config.port).toBe(4545);
 		expect(config.workspaceTemplateDir).toBe(templateDir);
+		expect(config.agentResourceTemplateDir).toBe(join(config.projectRoot, "templates", "agent-resources"));
+		expect(config.agentResourceDir).toBe(join(root, "data", "system", "agent-resources"));
 		expect(config.sandboxRequired).toBe(false);
 	});
 

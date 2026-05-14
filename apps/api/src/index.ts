@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { createApp } from "./app.js";
 import { loadEnv } from "./env.js";
+import { AgentResourceSynchronizer } from "./services/agent-resource-synchronizer.js";
 import { PiAgentService } from "./services/pi-agent-service.js";
 import { PiSessionStore } from "./services/pi-session-store.js";
 import { validateSandboxPrerequisites } from "./services/sandbox-prerequisites.js";
@@ -13,6 +14,9 @@ async function main(): Promise<void> {
 	mkdirSync(config.systemDataDir, { recursive: true });
 	mkdirSync(config.usersRoot, { recursive: true });
 	validateSandboxPrerequisites(config.sandboxRequired);
+
+	const agentResourceSynchronizer = new AgentResourceSynchronizer(config.agentResourceTemplateDir);
+	agentResourceSynchronizer.syncInto(config.agentResourceDir);
 
 	const templateProvisioner = new WorkspaceTemplateProvisioner(config.workspaceTemplateDir);
 	const userWorkspaceService = new UserWorkspaceService({
@@ -40,6 +44,8 @@ async function main(): Promise<void> {
 			{
 				dataRoot: config.dataRoot,
 				systemDataDir: config.systemDataDir,
+				agentResourceTemplateDir: config.agentResourceTemplateDir,
+				agentResourceDir: config.agentResourceDir,
 				workspaceTemplateDir: config.workspaceTemplateDir,
 				defaultUserId: config.defaultUserId,
 			},

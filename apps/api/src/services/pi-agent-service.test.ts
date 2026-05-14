@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppConfig } from "../env.js";
+import { AgentResourceSynchronizer } from "./agent-resource-synchronizer.js";
 import { PiAgentService } from "./pi-agent-service.js";
 import { PiSessionStore } from "./pi-session-store.js";
 import { UserWorkspaceService } from "./user-workspace-service.js";
@@ -25,11 +26,15 @@ function createFixture() {
 	cleanupPaths.push(root);
 
 	const templateDir = join(root, "templates", "workspace");
+	const agentResourceTemplateDir = join(root, "templates", "agent-resources");
 	const usersRoot = join(root, "data", "users");
 	const systemDataDir = join(root, "data", "system");
+	const agentResourceDir = join(systemDataDir, "agent-resources");
 	mkdirSync(templateDir, { recursive: true });
+	mkdirSync(join(agentResourceTemplateDir, "skills"), { recursive: true });
 	mkdirSync(systemDataDir, { recursive: true });
 	writeFileSync(join(templateDir, "README.md"), "template", "utf-8");
+	writeFileSync(join(agentResourceTemplateDir, "append-system-prompt.md"), "Follow backend template instructions.", "utf-8");
 
 	const config: AppConfig = {
 		appVersion: "0.1.0",
@@ -39,6 +44,8 @@ function createFixture() {
 		projectRoot: root,
 		dataRoot: join(root, "data"),
 		systemDataDir,
+		agentResourceTemplateDir,
+		agentResourceDir,
 		usersRoot,
 		workspaceTemplateDir: templateDir,
 		defaultUserId: "anonymous",
@@ -58,7 +65,7 @@ function createFixture() {
 	const sessionStore = new PiSessionStore(userWorkspaceService);
 	const piAgentService = new PiAgentService(config, userWorkspaceService, sessionStore);
 
-	return { piAgentService, sessionStore };
+	return { agentResourceDir, agentResourceTemplateDir, piAgentService, root, sessionStore, userWorkspaceService };
 }
 
 describe("PiAgentService", () => {
@@ -70,6 +77,66 @@ describe("PiAgentService", () => {
 		try {
 			expect(runtime.session.sessionId).toBe(created.id);
 			expect(runtime.session.sessionFile).toContain(created.id);
+		} finally {
+			runtime.session.dispose();
+		}
+	});
+
+	it("loads the synced append prompt and custom skills", async () => {
+		const fixture = createFixture();
+		const skillDir = join(fixture.agentResourceTemplateDir, "skills", "backend-review");
+		mkdirSync(skillDir, { recursive: true });
+		writeFileSync(
+			join(skillDir, "SKILL.md"),
+			[
+				"---",
+				"name: backend-review",
+				"description: Review backend changes and surface implementation risks.",
+				"---",
+				"",
+				"# Backend Review",
+			].join("\n"),
+			"utf-8",
+		);
+		new AgentResourceSynchronizer(fixture.agentResourceTemplateDir).syncInto(fixture.agentResourceDir);
+
+		const created = await fixture.sessionStore.createSession("anonymous");
+		const runtime = await fixture.piAgentService.createRequestSession("anonymous", created.id);
+
+		try {
+			expect(runtime.session.systemPrompt).toContain("Follow backend template instructions.");
+			expect(runtime.session.resourceLoader.getSkills().skills.map((skill) => skill.name)).toContain("backend-review");
+		} finally {
+			runtime.session.dispose();
+		}
+	});
+
+	it("ignores AGENTS.md and workspace-local skills from the user workspace", async () => {
+		const fixture = createFixture();
+		const paths = fixture.userWorkspaceService.ensureUserReady("anonymous");
+		mkdirSync(join(paths.workspaceDir, ".pi", "skills", "workspace-skill"), { recursive: true });
+		writeFileSync(join(paths.workspaceDir, "AGENTS.md"), "workspace instructions that must be ignored", "utf-8");
+		writeFileSync(
+			join(paths.workspaceDir, ".pi", "skills", "workspace-skill", "SKILL.md"),
+			[
+				"---",
+				"name: workspace-skill",
+				"description: A workspace-local skill that should not be loaded.",
+				"---",
+				"",
+				"# Workspace Skill",
+			].join("\n"),
+			"utf-8",
+		);
+
+		const created = await fixture.sessionStore.createSession("anonymous");
+		const runtime = await fixture.piAgentService.createRequestSession("anonymous", created.id);
+
+		try {
+			expect(runtime.session.systemPrompt).not.toContain("workspace instructions that must be ignored");
+			expect(runtime.session.resourceLoader.getSkills().skills.map((skill) => skill.name)).not.toContain(
+				"workspace-skill",
+			);
 		} finally {
 			runtime.session.dispose();
 		}

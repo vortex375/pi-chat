@@ -24,11 +24,14 @@ function createConfigFixture(): {
 	cleanupPaths.push(root);
 
 	const templateDir = join(root, "templates", "workspace");
+	const agentResourceTemplateDir = join(root, "templates", "agent-resources");
 	const usersRoot = join(root, "data", "users");
 	const systemDataDir = join(root, "data", "system");
 	mkdirSync(templateDir, { recursive: true });
+	mkdirSync(agentResourceTemplateDir, { recursive: true });
 	mkdirSync(systemDataDir, { recursive: true });
 	writeFileSync(join(templateDir, "README.md"), "template", "utf-8");
+	writeFileSync(join(agentResourceTemplateDir, "append-system-prompt.md"), "test prompt", "utf-8");
 
 	const config: AppConfig = {
 		appVersion: "0.1.0",
@@ -38,6 +41,8 @@ function createConfigFixture(): {
 		projectRoot: root,
 		dataRoot: join(root, "data"),
 		systemDataDir,
+		agentResourceTemplateDir,
+		agentResourceDir: join(systemDataDir, "agent-resources"),
 		usersRoot,
 		workspaceTemplateDir: templateDir,
 		defaultUserId: "anonymous",

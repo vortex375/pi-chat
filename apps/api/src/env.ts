@@ -61,6 +61,8 @@ export interface AppConfig {
 	projectRoot: string;
 	dataRoot: string;
 	systemDataDir: string;
+	agentResourceTemplateDir: string;
+	agentResourceDir: string;
 	usersRoot: string;
 	workspaceTemplateDir: string;
 	defaultUserId: string;
@@ -106,6 +108,10 @@ function validateRequiredEnv(config: AppConfig): void {
 	if (!existsSync(config.workspaceTemplateDir)) {
 		throw new Error(`Workspace template directory does not exist: ${config.workspaceTemplateDir}`);
 	}
+
+	if (!existsSync(config.agentResourceTemplateDir)) {
+		throw new Error(`Agent resource template directory does not exist: ${config.agentResourceTemplateDir}`);
+	}
 }
 
 export function loadEnv(env: NodeJS.ProcessEnv = process.env, options: LoadEnvOptions = {}): AppConfig {
@@ -123,6 +129,8 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env, options: LoadEnvOp
 		projectRoot,
 		dataRoot,
 		systemDataDir: resolve(join(dataRoot, "system")),
+		agentResourceTemplateDir: resolve(join(projectRoot, "templates", "agent-resources")),
+		agentResourceDir: resolve(join(dataRoot, "system", "agent-resources")),
 		usersRoot: resolve(join(dataRoot, "users")),
 		workspaceTemplateDir: resolve(env.PI_CHAT_TEMPLATE_ROOT ?? join(projectRoot, "templates", "workspace")),
 		defaultUserId: env.PI_CHAT_DEFAULT_USER_ID ?? "anonymous",
