@@ -1,0 +1,20 @@
+{
+	"name": "pi-chat",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"workspaces": [
+		"packages/shared",
+		"apps/api",
+		"apps/web"
+	],
+	"scripts": {
+		"build": "npm run build --workspace @pi-chat/shared && npm run build --workspace @pi-chat/web && npm run build --workspace @pi-chat/api",
+		"dev:api": "npm run dev --workspace @pi-chat/api",
+		"dev:web": "npm run dev --workspace @pi-chat/web",
+		"test": "npm run test --workspaces --if-present"
+	},
+	"engines": {
+		"node": ">=20.6.0"
+	}
+}
