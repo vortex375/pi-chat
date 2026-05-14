@@ -1,10 +1,28 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
+import { parse as parseDotenv } from "dotenv";
 
 const thisDir = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(thisDir, "../../..");
 const SUPPORTED_PI_PROVIDERS = ["openrouter"] as const;
+
+export interface LoadEnvOptions {
+	envFilePath?: string;
+}
+
+function loadDotenvFile(env: NodeJS.ProcessEnv, envFilePath: string): void {
+	if (!existsSync(envFilePath)) {
+		return;
+	}
+
+	const parsed = parseDotenv(readFileSync(envFilePath));
+	for (const [key, value] of Object.entries(parsed)) {
+		if (env[key] === undefined) {
+			env[key] = value;
+		}
+	}
+}
 
 function parsePort(raw: string | undefined, fallback: number): number {
 	if (!raw) {
@@ -90,7 +108,11 @@ function validateRequiredEnv(config: AppConfig): void {
 	}
 }
 
-export function loadEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
+export function loadEnv(env: NodeJS.ProcessEnv = process.env, options: LoadEnvOptions = {}): AppConfig {
+	if (env === process.env || options.envFilePath) {
+		loadDotenvFile(env, options.envFilePath ?? join(projectRoot, ".env"));
+	}
+
 	const dataRoot = resolve(env.PI_CHAT_DATA_ROOT ?? join(projectRoot, "data"));
 
 	const config: AppConfig = {

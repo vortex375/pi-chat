@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -34,6 +34,31 @@ describe("loadEnv", () => {
 		});
 
 		expect(config.port).toBe(4321);
+		expect(config.workspaceTemplateDir).toBe(templateDir);
+		expect(config.sandboxRequired).toBe(false);
+	});
+
+	it("loads configuration from a dotenv file", () => {
+		const root = join(tmpdir(), `pi-chat-env-dotenv-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		cleanupPaths.push(root);
+		const templateDir = join(root, "templates", "workspace");
+		const envFilePath = join(root, ".env");
+		mkdirSync(templateDir, { recursive: true });
+		writeFileSync(
+			envFilePath,
+			[
+				"PORT=4545",
+				`PI_CHAT_TEMPLATE_ROOT=${templateDir}`,
+				"PI_MODEL_ID=openai/gpt-oss-120b",
+				"PI_OPENAI_BASE_URL=https://openrouter.ai/api/v1",
+				"PI_OPENAI_API_KEY=test-key",
+				"PI_SANDBOX_REQUIRED=false",
+			].join("\n"),
+		);
+
+		const config = loadEnv({}, { envFilePath });
+
+		expect(config.port).toBe(4545);
 		expect(config.workspaceTemplateDir).toBe(templateDir);
 		expect(config.sandboxRequired).toBe(false);
 	});

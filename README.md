@@ -50,7 +50,7 @@ pi-chat/
 
 ### Required Environment Variables
 
-Set these before starting the API:
+Set these before starting the API. When present, the backend also loads `.env` from the repository root automatically, so `npm run dev:api` will pick it up without extra shell setup:
 
 - `PI_MODEL_ID`
 - `PI_OPENAI_BASE_URL`
