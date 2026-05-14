@@ -8,15 +8,22 @@
 }
 
 html {
+	height: 100%;
 	scroll-behavior: smooth;
 }
 
 body {
 	margin: 0;
+	height: 100%;
 	min-width: 320px;
+	overflow: hidden;
 	background:
 		radial-gradient(circle at top, rgba(245, 158, 11, 0.14), transparent 32%),
 		linear-gradient(180deg, #120f0c 0%, #0c0a09 100%);
+}
+
+#root {
+	height: 100%;
 }
 
 * {

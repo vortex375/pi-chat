@@ -1,5 +1,7 @@
 import { startTransition, useEffect, useRef, useState } from "react";
 import type { ChatMessage, SessionDetail, SessionSummary, StreamEvent } from "@pi-chat/shared";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { createSession, getSession, listSessions, renameSession, streamSessionMessage } from "./api";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -114,20 +116,17 @@ function SessionSidebar(props: {
 	onSelectSession: (sessionId: string) => void;
 }) {
 	return (
-		<aside className="flex w-full flex-col rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(31,24,20,0.96),rgba(17,14,12,0.98))] p-5 shadow-[0_30px_90px_rgba(0,0,0,0.35)] lg:max-w-sm">
-			<div className="flex items-start justify-between gap-4 border-b border-white/10 pb-5">
+		<aside className="flex w-full flex-col rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(31,24,20,0.96),rgba(17,14,12,0.98))] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.35)] lg:max-w-[19rem]">
+			<div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
 				<div>
 					<p className="text-xs uppercase tracking-[0.35em] text-amber-300/80">Pi Chat</p>
-					<h1 className="mt-3 text-3xl font-semibold tracking-tight text-stone-50">Sessions</h1>
-					<p className="mt-2 max-w-xs text-sm leading-6 text-stone-400">
-						Persistent Pi sessions with a workspace-bound tool runtime.
-					</p>
+					<h1 className="mt-2 text-2xl font-semibold tracking-tight text-stone-50">Sessions</h1>
 				</div>
 				<button
 					type="button"
 					onClick={props.onCreateSession}
 					disabled={props.isCreating || props.isBusy}
-					className="rounded-full border border-amber-300/30 bg-amber-300/10 px-4 py-2 text-sm font-medium text-amber-100 transition hover:border-amber-200/50 hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-40"
+					className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3.5 py-1.5 text-sm font-medium text-amber-100 transition hover:border-amber-200/50 hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-40"
 				>
 					{props.isCreating ? "Creating..." : "New session"}
 				</button>
@@ -139,7 +138,7 @@ function SessionSidebar(props: {
 				</p>
 			) : null}
 
-			<div className="mt-5 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+			<div className="mt-4 flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-1">
 				{props.isLoading ? (
 					<div className="space-y-3">
 						{Array.from({ length: 4 }, (_, index) => (
@@ -162,7 +161,7 @@ function SessionSidebar(props: {
 								type="button"
 								onClick={() => props.onSelectSession(session.id)}
 								disabled={props.isBusy}
-								className={`rounded-[1.6rem] border px-4 py-4 text-left transition ${
+								className={`rounded-[1.4rem] border px-3.5 py-3 text-left transition ${
 									isSelected
 										? "border-amber-300/40 bg-amber-300/12 text-stone-50 shadow-[0_12px_40px_rgba(245,158,11,0.12)]"
 										: "border-white/8 bg-white/4 text-stone-200 hover:border-white/14 hover:bg-white/7"
@@ -206,12 +205,12 @@ function EditableSessionTitle(props: {
 		return (
 			<div>
 				<div className="flex items-center gap-3">
-					<h2 className="text-3xl font-semibold tracking-tight text-stone-50 sm:text-4xl">{props.displayName}</h2>
+					<h2 className="text-xl font-semibold tracking-tight text-stone-50 sm:text-2xl">{props.displayName}</h2>
 					<button
 						type="button"
 						onClick={() => setIsEditing(true)}
 						disabled={props.disabled}
-						className="rounded-full border border-white/12 px-3 py-1.5 text-xs uppercase tracking-[0.22em] text-stone-300 transition hover:border-white/30 hover:text-stone-100 disabled:cursor-not-allowed disabled:opacity-40"
+						className="rounded-full border border-white/12 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-stone-300 transition hover:border-white/30 hover:text-stone-100 disabled:cursor-not-allowed disabled:opacity-40"
 					>
 						Rename
 					</button>
@@ -265,10 +264,70 @@ function EditableSessionTitle(props: {
 	);
 }
 
+function MarkdownMessage(props: { content: string; tone: "user" | "assistant" | "error" }) {
+	const inlineCodeClassName =
+		props.tone === "user"
+			? "rounded bg-stone-950/12 px-1.5 py-0.5 text-[0.92em] text-stone-950"
+			: props.tone === "error"
+				? "rounded bg-black/20 px-1.5 py-0.5 text-[0.92em] text-rose-50"
+				: "rounded bg-white/10 px-1.5 py-0.5 text-[0.92em] text-stone-50";
+	const blockClassName =
+		props.tone === "user"
+			? "border border-stone-950/10 bg-stone-950/8"
+			: props.tone === "error"
+				? "border border-rose-300/20 bg-black/20"
+				: "border border-white/10 bg-black/25";
+	const quoteClassName =
+		props.tone === "user"
+			? "border-l-stone-950/30 text-stone-800"
+			: props.tone === "error"
+				? "border-l-rose-200/40 text-rose-100"
+				: "border-l-amber-300/40 text-stone-300";
+	const linkClassName = props.tone === "user" ? "text-stone-950 underline decoration-stone-950/40 underline-offset-4" : "text-amber-200 underline decoration-amber-200/40 underline-offset-4";
+
+	return (
+		<ReactMarkdown
+			remarkPlugins={[remarkGfm]}
+			components={{
+				p: ({ node, ...rest }) => <p className="mt-3 first:mt-0" {...rest} />,
+				ul: ({ node, ...rest }) => <ul className="mt-3 list-disc space-y-2 pl-5 first:mt-0" {...rest} />,
+				ol: ({ node, ...rest }) => <ol className="mt-3 list-decimal space-y-2 pl-5 first:mt-0" {...rest} />,
+				li: ({ node, ...rest }) => <li className="pl-1" {...rest} />,
+				blockquote: ({ node, ...rest }) => <blockquote className={`mt-3 border-l-2 pl-4 italic first:mt-0 ${quoteClassName}`} {...rest} />,
+				a: ({ node, ...rest }) => <a className={linkClassName} target="_blank" rel="noreferrer" {...rest} />,
+				pre: ({ node, ...rest }) => <pre className={`mt-3 overflow-x-auto rounded-2xl p-4 first:mt-0 ${blockClassName}`} {...rest} />,
+				code: ({ node, className, children, ...rest }) => {
+					if (className) {
+						return (
+							<code className={`${className} block whitespace-pre text-[13px] leading-6`} {...rest}>
+								{children}
+							</code>
+						);
+					}
+
+					return (
+						<code className={inlineCodeClassName} {...rest}>
+							{children}
+						</code>
+					);
+				},
+				hr: ({ node, ...rest }) => <hr className="my-4 border-white/10 first:mt-0" {...rest} />,
+				table: ({ node, ...rest }) => <table className="mt-3 w-full border-collapse text-left first:mt-0" {...rest} />,
+				th: ({ node, ...rest }) => <th className="border-b border-white/10 px-3 py-2 font-semibold" {...rest} />,
+				td: ({ node, ...rest }) => <td className="border-b border-white/10 px-3 py-2 align-top" {...rest} />,
+			}}
+		>
+			{props.content}
+		</ReactMarkdown>
+	);
+}
+
 function MessageBubble({ message }: { message: ChatMessage }) {
 	const isUser = message.role === "user";
 	const isStreaming = message.status === "streaming";
 	const isError = message.status === "error";
+	const messageTone = isUser ? "user" : isError ? "error" : "assistant";
+	const messageContent = message.content || (isStreaming ? "Thinking..." : "");
 	return (
 		<div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
 			<div
@@ -280,7 +339,9 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 							: "rounded-bl-md border border-white/10 bg-white/6 text-stone-100"
 				}`}
 			>
-				<div className="whitespace-pre-wrap text-sm leading-7 sm:text-[15px]">{message.content || (isStreaming ? "Thinking..." : "")}</div>
+				<div className="text-sm leading-7 sm:text-[15px]">
+					<MarkdownMessage content={messageContent} tone={messageTone} />
+				</div>
 				<div className={`mt-3 flex items-center justify-between gap-4 text-[11px] uppercase tracking-[0.22em] ${isUser ? "text-stone-700/80" : "text-stone-500"}`}>
 					<span>{message.role}</span>
 					<div className="flex items-center gap-2">
@@ -299,9 +360,24 @@ function Composer(props: {
 	onSubmit: () => void;
 	disabled: boolean;
 }) {
+	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+	useEffect(() => {
+		const textarea = textareaRef.current;
+		if (!textarea) {
+			return;
+		}
+
+		textarea.style.height = "0px";
+		const nextHeight = Math.min(textarea.scrollHeight, 192);
+		textarea.style.height = `${Math.max(nextHeight, 44)}px`;
+		textarea.style.overflowY = textarea.scrollHeight > 192 ? "auto" : "hidden";
+	}, [props.value]);
+
 	return (
-		<div className="rounded-[1.75rem] border border-white/10 bg-black/20 p-3 shadow-[0_20px_60px_rgba(0,0,0,0.22)]">
+		<div className="rounded-[1.35rem] border border-white/10 bg-black/20 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.22)]">
 			<textarea
+				ref={textareaRef}
 				value={props.value}
 				onChange={(event) => props.onChange(event.target.value)}
 				onKeyDown={(event) => {
@@ -312,15 +388,16 @@ function Composer(props: {
 				}}
 				disabled={props.disabled}
 				placeholder="Send a prompt into the workspace..."
-				className="min-h-28 w-full resize-none bg-transparent px-3 py-2 text-sm leading-7 text-stone-100 outline-none placeholder:text-stone-500"
+				rows={1}
+				className="w-full resize-none bg-transparent px-2.5 py-2 text-sm leading-6 text-stone-100 outline-none placeholder:text-stone-500"
 			/>
-			<div className="flex items-center justify-between gap-4 border-t border-white/8 px-3 pt-3">
-				<p className="text-xs uppercase tracking-[0.24em] text-stone-500">Enter to send, Shift+Enter for a new line</p>
+			<div className="flex items-center justify-between gap-3 border-t border-white/8 px-2 py-1.5">
+				<p className="text-[11px] uppercase tracking-[0.22em] text-stone-500">Enter to send, Shift+Enter for a new line</p>
 				<button
 					type="button"
 					onClick={props.onSubmit}
 					disabled={props.disabled || props.value.trim().length === 0}
-					className="rounded-full bg-amber-300 px-5 py-2 text-sm font-semibold text-stone-950 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-45"
+					className="rounded-full bg-amber-300 px-4 py-2 text-sm font-semibold text-stone-950 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-45"
 				>
 					Send
 				</button>
@@ -597,8 +674,8 @@ export function App() {
 	const selectedSessionDisplay = selectedSession ?? null;
 
 	return (
-		<div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.14),_transparent_28%),linear-gradient(180deg,_#1a1410_0%,_#0b0907_100%)] px-4 py-4 text-stone-100 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
-			<div className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-7xl flex-col gap-4 lg:grid lg:grid-cols-[22rem_minmax(0,1fr)]">
+		<div className="flex h-dvh overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.14),_transparent_28%),linear-gradient(180deg,_#1a1410_0%,_#0b0907_100%)] px-3 py-3 text-stone-100 sm:px-4 sm:py-4 lg:px-5 lg:py-5">
+			<div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-3 lg:grid lg:grid-cols-[19rem_minmax(0,1fr)]">
 				<SessionSidebar
 					sessions={sessions}
 					selectedSessionId={selectedSessionId}
@@ -610,11 +687,16 @@ export function App() {
 					onSelectSession={(sessionId) => startTransition(() => setSelectedSessionId(sessionId))}
 				/>
 
-				<main className="flex min-h-[42rem] flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.14),_transparent_38%),linear-gradient(180deg,_rgba(28,23,19,0.98),_rgba(12,10,9,0.98))] shadow-[0_30px_90px_rgba(0,0,0,0.32)]">
-					<div className="border-b border-white/10 px-5 py-5 sm:px-7 sm:py-6">
+				<main className="relative flex min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.14),_transparent_38%),linear-gradient(180deg,_rgba(28,23,19,0.98),_rgba(12,10,9,0.98))] shadow-[0_30px_90px_rgba(0,0,0,0.32)]">
+					<div className="absolute right-3 top-3 z-10 rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[11px] tracking-[0.02em] text-stone-300 backdrop-blur-sm sm:right-4 sm:top-4">
+						<span className={`font-medium uppercase tracking-[0.18em] ${statusTone(streamStatus.phase)}`}>{streamStatus.phase}</span>
+						<span className="mx-1.5 text-stone-500">/</span>
+						<span>{streamStatus.label}</span>
+					</div>
+					<div className="border-b border-white/10 px-4 py-3 sm:px-5 sm:py-3">
 						<p className="text-xs uppercase tracking-[0.35em] text-stone-400">Conversation</p>
 						{selectedSessionDisplay ? (
-							<div className="mt-3">
+							<div className="mt-2.5">
 								<EditableSessionTitle
 									value={selectedSessionDisplay.name ?? ""}
 									displayName={selectedSessionDisplay.displayName}
@@ -623,33 +705,21 @@ export function App() {
 									errorMessage={renameError}
 									onRename={handleRenameSession}
 								/>
-								<p className="mt-3 max-w-3xl text-sm leading-6 text-stone-400">
-									{selectedSessionDisplay.hasCustomName
-										? `Fallback label: ${selectedSessionDisplay.firstMessage}`
-										: "This title follows the first user message until you save a custom one."}
-								</p>
 							</div>
 						) : (
-							<div className="mt-3 max-w-2xl">
-								<h2 className="text-3xl font-semibold tracking-tight text-stone-50 sm:text-4xl">Build from the plan, not from stubs.</h2>
-								<p className="mt-3 text-base leading-7 text-stone-300">
+							<div className="mt-2.5 max-w-2xl">
+								<h2 className="text-2xl font-semibold tracking-tight text-stone-50 sm:text-3xl">Build from the plan, not from stubs.</h2>
+								<p className="mt-2 text-sm leading-6 text-stone-300">
 									Create a session to start chatting with the request-scoped Pi runtime.
 								</p>
 							</div>
 						)}
 					</div>
 
-					<div className="flex min-h-0 flex-1 flex-col px-3 pb-3 pt-4 sm:px-5 sm:pb-5 sm:pt-5">
-						<div className="rounded-[1.6rem] border border-white/8 bg-black/14 px-4 py-3 text-sm text-stone-300 sm:px-5">
-							<div className="flex flex-wrap items-center gap-3">
-								<span className={`text-xs uppercase tracking-[0.28em] ${statusTone(streamStatus.phase)}`}>{streamStatus.phase}</span>
-								<span className="leading-6 text-stone-300">{streamStatus.label}</span>
-								{!isScrollPinned && isStreaming ? <span className="text-xs uppercase tracking-[0.2em] text-stone-500">Scroll unlocked</span> : null}
-							</div>
-						</div>
+					<div className="flex min-h-0 flex-1 flex-col px-2.5 pb-2.5 pt-2.5 sm:px-3.5 sm:pb-3.5 sm:pt-3">
 
 						{chatError ? (
-							<p className="mt-4 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{chatError}</p>
+							<p className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{chatError}</p>
 						) : null}
 
 						<div
@@ -659,7 +729,7 @@ export function App() {
 								const remaining = element.scrollHeight - element.scrollTop - element.clientHeight;
 								setIsScrollPinned(remaining < 40);
 							}}
-							className="mt-4 flex min-h-0 flex-1 flex-col overflow-y-auto rounded-[1.75rem] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] px-3 py-4 sm:px-5"
+							className={`${chatError ? "mt-3" : "mt-0"} flex min-h-0 flex-1 flex-col overflow-y-auto rounded-[1.5rem] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] px-2.5 py-3 sm:px-4`}
 						>
 							{selectedSessionState === "loading" ? (
 								<div className="space-y-4">
@@ -684,7 +754,7 @@ export function App() {
 									</p>
 								</div>
 							) : (
-								<div className="space-y-4 pb-2">
+								<div className="space-y-3 pb-1">
 									{selectedSessionDisplay.messages.map((message) => (
 										<MessageBubble key={message.id} message={message} />
 									))}
@@ -692,7 +762,7 @@ export function App() {
 							)}
 						</div>
 
-						<div className="mt-4">
+						<div className="mt-3">
 							<Composer
 								value={composerValue}
 								onChange={setComposerValue}

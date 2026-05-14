@@ -165,7 +165,6 @@ describe("App", () => {
 
 		expect(screen.getByRole("button", { name: /Repository overview/i })).toBeInTheDocument();
 		expect(screen.getByRole("heading", { name: "Sandbox review" })).toBeInTheDocument();
-		expect(screen.getByText(/Fallback label: Check the sandbox rules/)).toBeInTheDocument();
 	});
 
 	it("selecting a session loads its transcript", async () => {
@@ -328,6 +327,37 @@ describe("App", () => {
 				screen.getByText("It serializes work per session while allowing parallel work across sessions."),
 			).toBeInTheDocument();
 		});
+	});
+
+	it("renders assistant bubble content as markdown", async () => {
+		const markdownSession = createSessionDetail({
+			id: "session-markdown",
+			displayName: "Markdown rendering",
+			firstMessage: "Show markdown",
+			messages: [
+				createMessage("md-1", "user", "Show markdown"),
+				createMessage(
+					"md-2",
+					"assistant",
+					"Use **bold** text, `inline code`, and a list:\n\n- first item\n- second item\n\n```ts\nconst value = 1;\n```",
+				),
+			],
+		});
+
+		sessionDetails = { [markdownSession.id]: markdownSession };
+		sessionList = [toSummary(markdownSession)];
+		mockedApi.listSessions.mockResolvedValue(clone(sessionList));
+		mockedApi.getSession.mockImplementation(async (sessionId: string) => clone(requireSessionDetail(sessionDetails, sessionId)));
+
+		render(<App />);
+		await waitFor(() => {
+			expect(screen.getByRole("heading", { name: "Markdown rendering" })).toBeInTheDocument();
+		});
+
+		expect(screen.getByText("bold", { selector: "strong" })).toBeInTheDocument();
+		expect(screen.getByText("inline code", { selector: "code" })).toBeInTheDocument();
+		expect(screen.getByRole("list")).toBeInTheDocument();
+		expect(screen.getByText("const value = 1;", { selector: "code" })).toBeInTheDocument();
 	});
 });
 
