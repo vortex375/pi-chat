@@ -5,7 +5,7 @@ import {
 	type SessionInfo,
 	type SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
-import type { ChatMessage, SessionDetail, SessionSummary } from "@pi-chat/shared";
+import { getFallbackSessionTitle, type ChatMessage, type SessionDetail, type SessionSummary } from "@pi-chat/shared";
 import type { UserWorkspaceService } from "./user-workspace-service.js";
 
 function extractTextContent(content: unknown): string {
@@ -29,7 +29,7 @@ function toSessionSummary(info: SessionInfo): SessionSummary {
 	const name = info.name?.trim() || undefined;
 	const summary: SessionSummary = {
 		id: info.id,
-		displayName: name ?? info.firstMessage,
+		displayName: name ?? getFallbackSessionTitle(info.firstMessage),
 		hasCustomName: name !== undefined,
 		firstMessage: info.firstMessage,
 		modifiedAt: info.modified.toISOString(),
@@ -144,7 +144,7 @@ export class PiSessionStore {
 
 		const detail: SessionDetail = {
 			id: sessionManager.getSessionId(),
-			displayName: name ?? firstUserMessage,
+			displayName: name ?? getFallbackSessionTitle(firstUserMessage),
 			hasCustomName: name !== undefined,
 			firstMessage: firstUserMessage,
 			createdAt,

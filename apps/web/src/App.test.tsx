@@ -224,6 +224,37 @@ describe("App", () => {
 		});
 	});
 
+	it("uses a truncated fallback title for the first optimistic prompt in a new session", async () => {
+		const user = userEvent.setup();
+		let resolveStream!: () => void;
+		mockedApi.streamSessionMessage.mockImplementation(
+			() =>
+				new Promise<void>((resolve) => {
+					resolveStream = resolve;
+				}),
+		);
+
+		await renderApp();
+		await user.click(screen.getByRole("button", { name: "New session" }));
+
+		await waitFor(() => {
+			expect(screen.getByRole("heading", { name: EMPTY_NAME })).toBeInTheDocument();
+		});
+
+		const prompt = "Explain how the execution queue coordinates long running workspace tasks across multiple session requests";
+		const composer = screen.getByPlaceholderText(/Send a prompt into the workspace/i);
+		await user.type(composer, prompt);
+		await user.click(screen.getByRole("button", { name: "Send" }));
+
+		expect(
+			screen.getByRole("heading", { name: "Explain how the execution queue coordinates long running..." }),
+		).toBeInTheDocument();
+
+		await act(async () => {
+			resolveStream();
+		});
+	});
+
 	it("keeps the error state when a stream emits an error", async () => {
 		const user = userEvent.setup();
 		let emit!: (event: StreamEvent) => void;

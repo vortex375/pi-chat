@@ -1,5 +1,40 @@
 import { Type, type Static } from "typebox";
 
+const SESSION_TITLE_MAX_WORDS = 8;
+const SESSION_TITLE_MAX_LENGTH = 56;
+
+function trimSessionTitleToLength(value: string, maxLength: number): string {
+	if (value.length <= maxLength) {
+		return value;
+	}
+
+	const candidate = value.slice(0, maxLength + 1).trimEnd();
+	const boundary = candidate.lastIndexOf(" ");
+	const truncated = boundary >= Math.floor(maxLength * 0.6) ? candidate.slice(0, boundary) : value.slice(0, maxLength).trimEnd();
+	return `${truncated}...`;
+}
+
+export function getFallbackSessionTitle(value: string): string {
+	const normalized = value.replace(/\s+/g, " ").trim();
+	if (!normalized) {
+		return "(no messages)";
+	}
+
+	const words = normalized.split(" ");
+	const limitedByWords = words.length > SESSION_TITLE_MAX_WORDS;
+	const wordLimitedTitle = limitedByWords ? words.slice(0, SESSION_TITLE_MAX_WORDS).join(" ") : normalized;
+
+	if (wordLimitedTitle.length > SESSION_TITLE_MAX_LENGTH) {
+		return trimSessionTitleToLength(wordLimitedTitle, SESSION_TITLE_MAX_LENGTH);
+	}
+
+	if (limitedByWords) {
+		return `${wordLimitedTitle}...`;
+	}
+
+	return wordLimitedTitle;
+}
+
 export const HealthResponseSchema = Type.Object({
 	status: Type.Literal("ok"),
 	service: Type.Literal("pi-chat-api"),

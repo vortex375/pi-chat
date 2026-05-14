@@ -343,6 +343,35 @@ describe("createApp", () => {
 		expect(detail?.messages[1]?.content).toBe("Hello back");
 	});
 
+	it("truncates fallback session titles derived from the first user prompt", async () => {
+		const fixture = createConfigFixture();
+		const created = await fixture.sessionStore.createSession("anonymous");
+		const app = createApp({
+			config: fixture.config,
+			piAgentService: createFakeStreamingAgentService(fixture),
+			sessionStore: fixture.sessionStore,
+			sessionExecutionQueue: fixture.sessionExecutionQueue,
+			userWorkspaceService: fixture.userWorkspaceService,
+			logger: false,
+		});
+		const prompt = "Explain how the execution queue coordinates long running workspace tasks across multiple session requests";
+
+		const response = await app.inject({
+			method: "POST",
+			url: `/api/sessions/${created.id}/messages`,
+			payload: { content: prompt },
+		});
+		const detail = await fixture.sessionStore.getSession("anonymous", created.id);
+		const sessions = await fixture.sessionStore.listSessions("anonymous");
+
+		await app.close();
+
+		expect(response.statusCode).toBe(200);
+		expect(detail?.firstMessage).toBe(prompt);
+		expect(detail?.displayName).toBe("Explain how the execution queue coordinates long running...");
+		expect(sessions[0]?.displayName).toBe("Explain how the execution queue coordinates long running...");
+	});
+
 	it("returns 404 for a missing streaming session", async () => {
 		const fixture = createConfigFixture();
 		const app = createApp({

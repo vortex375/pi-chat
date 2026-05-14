@@ -1,5 +1,5 @@
 import { startTransition, useEffect, useRef, useState } from "react";
-import type { ChatMessage, SessionDetail, SessionSummary, StreamEvent } from "@pi-chat/shared";
+import { getFallbackSessionTitle, type ChatMessage, type SessionDetail, type SessionSummary, type StreamEvent } from "@pi-chat/shared";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { createSession, getSession, listSessions, renameSession, streamSessionMessage } from "./api";
@@ -75,7 +75,8 @@ function updateAssistantMessage(detail: SessionDetail, assistantId: string, upda
 function createOptimisticDetail(detail: SessionDetail, prompt: string): { assistantId: string; detail: SessionDetail } {
 	const optimisticUser = buildLocalMessage("user", prompt, "complete");
 	const optimisticAssistant = buildLocalMessage("assistant", "", "streaming");
-	const displayName = detail.hasCustomName || detail.firstMessage !== EMPTY_SESSION_LABEL ? detail.displayName : prompt;
+	const displayName =
+		detail.hasCustomName || detail.firstMessage !== EMPTY_SESSION_LABEL ? detail.displayName : getFallbackSessionTitle(prompt);
 
 	return {
 		assistantId: optimisticAssistant.id,
