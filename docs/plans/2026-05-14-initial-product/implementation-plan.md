@@ -15,10 +15,15 @@ Build a new application inside the `pi-chat` workspace with:
 This plan assumes the initial prototype will:
 
 - use a hard-coded `anonymous` user ID everywhere
+- use one shared `anonymous` workspace for v1; later each real `userId` will get its own workspace
 - skip file upload and download for now
-- use Pi's built-in persisted session files for v1 instead of introducing Postgres immediately
+- use Pi's built-in persisted JSONL session files for v1 behind a clean storage abstraction, instead of introducing Postgres immediately
+- initialize new workspaces from a template; the initial template is an empty placeholder
 - keep all runtime state inside the `pi-chat` workspace or its deployment volume, not under `~/.pi/agent`
+- target OpenRouter first, using an OpenAI-compatible base URL, model ID, and API key provided through app configuration
+- do not restrict outbound network access for sandboxed `bash` in v1
 - use the Pi SDK directly instead of running Pi as a subprocess over RPC
+- have the backend serve the built frontend in production so the application can later ship as a single Docker image
 
 ## Architecture summary
 
@@ -27,7 +32,7 @@ This plan assumes the initial prototype will:
 ```text
 pi-chat/
   apps/
-    api/                 # Fastify backend embedding Pi
+    api/                 # Fastify backend embedding Pi and serving the web build in production
     web/                 # React + Vite + Tailwind frontend
   packages/
     shared/              # Shared DTOs, event types, validation schemas
@@ -37,6 +42,8 @@ pi-chat/
       anonymous/
         workspace/       # sandbox root / cwd for Pi
         sessions/        # persisted Pi JSONL sessions
+  templates/
+    workspace/           # placeholder template copied into new workspaces
   docs/
     plans/
       2026-05-14-initial-product/
@@ -49,6 +56,7 @@ pi-chat/
 - frontend: React + Vite + TailwindCSS
 - shared contracts: TypeScript package under `packages/shared`
 - tests: Vitest for unit and backend integration tests, React Testing Library for frontend behavior
+- deployment shape: backend serves static frontend assets in production, with a single Docker image as the target packaging model
 
 ## Backend plan
 
@@ -113,6 +121,8 @@ data/
     anonymous/
       workspace/
       sessions/
+templates/
+  workspace/
 ```
 
 Recommended service boundaries:
@@ -120,12 +130,20 @@ Recommended service boundaries:
 - `UserWorkspaceService`
   - resolves user paths
   - creates workspace on first use
+  - initializes a new workspace by copying the configured template placeholder
   - can later support non-anonymous users without changing API handlers
+
+- `WorkspaceTemplateProvisioner`
+  - copies template contents into a newly created workspace
+  - starts as an empty placeholder directory in v1
+  - can later support richer starter repositories or per-user bootstrap flows
 
 - `PiSessionStore`
   - wraps `SessionManager.create/open/list`
+  - uses `appendSessionInfo()` / `getSessionName()` for editable session titles
   - returns sidebar-friendly session metadata
   - resolves session ID to session file path
+  - derives the default display name from the first user message when no explicit title is set
 
 - `ConversationMapper`
   - converts Pi session entries into frontend DTOs
@@ -157,12 +175,13 @@ Recommended initial contract:
 - `GET /api/sessions`
 - `POST /api/sessions`
 - `GET /api/sessions/:sessionId`
+- `PATCH /api/sessions/:sessionId`
 - `POST /api/sessions/:sessionId/messages`
 
 Endpoint behavior:
 
 - `GET /api/sessions`
-  - returns session sidebar data such as `id`, `name`, `firstMessage`, `modifiedAt`
+  - returns session sidebar data such as `id`, `name`, `displayName`, `firstMessage`, `modifiedAt`
 
 - `POST /api/sessions`
   - creates a new persisted Pi session for the current user
@@ -170,6 +189,11 @@ Endpoint behavior:
 
 - `GET /api/sessions/:sessionId`
   - returns session metadata and current-branch chat messages
+
+- `PATCH /api/sessions/:sessionId`
+  - updates the editable session name
+  - persists the explicit title via Pi session metadata
+  - clears the explicit title when sent an empty value so the default label falls back to the first user message
 
 - `POST /api/sessions/:sessionId/messages`
   - accepts a user message
@@ -238,7 +262,7 @@ For Linux:
 - use `bubblewrap`
 - allow write access to the user workspace and `/tmp`
 - deny access to host secrets and parent directories
-- make outbound network policy explicit rather than implicit
+- do not restrict outbound network access in v1; keep the policy seam so restrictions can be added later without redesigning the execution layer
 
 Operational requirement:
 
@@ -262,13 +286,16 @@ Use server-owned environment configuration.
 
 Suggested configuration surface:
 
-- `PI_PROVIDER`
+- `PI_PROVIDER` or equivalent app-level provider selector
 - `PI_MODEL_ID`
-- provider API key env vars such as `ANTHROPIC_API_KEY`
+- `PI_OPENAI_BASE_URL`
+- `PI_OPENAI_API_KEY`
 - optional sandbox policy flags
 
 Implementation rules:
 
+- the initial default target is OpenRouter through an OpenAI-compatible endpoint
+- backend configuration must accept a model ID, base URL, and API key and map them into the Pi model/provider setup
 - model/provider must be validated at startup
 - credentials should come from environment or deployment secrets, not interactive login
 - do not depend on a developer's `~/.pi/agent/auth.json`
@@ -280,13 +307,14 @@ Implementation rules:
 - create workspace package structure
 - add shared config and environment loading
 - add backend app bootstrap, logging, and health endpoint
-- add `UserWorkspaceService` and `PiSessionStore`
+- add `UserWorkspaceService`, `WorkspaceTemplateProvisioner`, and `PiSessionStore`
 
 #### Phase 2: Pi integration without UI
 
 - build request-scoped `AgentSession` factory
 - wire explicit auth/model/settings/resource loading
 - create session list, create session, and get session endpoints
+- add session rename support using Pi session metadata and default-name fallback logic
 - add transcript mapping from Pi sessions to API DTOs
 
 #### Phase 3: streaming prompt endpoint
@@ -302,6 +330,12 @@ Implementation rules:
 - implement sandboxed `bash`
 - add startup validation for sandbox dependencies
 - add tests that prove blocked access outside the workspace
+
+#### Phase 5: production assembly
+
+- serve the built frontend assets from the backend in production
+- keep local development split between the API server and the web dev server
+- keep the file layout compatible with a single Docker image build later
 
 ## Frontend plan
 
@@ -327,6 +361,7 @@ Suggested responsibilities:
 
 - session list query loads existing sessions
 - selected session query loads transcript
+- session title edits persist through a dedicated rename request
 - composer submit starts a streaming POST request
 - optimistic user message is shown immediately
 - assistant response bubble is appended incrementally from stream deltas
@@ -339,6 +374,7 @@ The frontend should not try to reconstruct persistence locally. The backend rema
 - `SessionSidebar`
 - `NewSessionButton`
 - `ChatHeader`
+- `EditableSessionTitle`
 - `MessageList`
 - `MessageBubble`
 - `Composer`
@@ -350,9 +386,16 @@ Suggested DTOs in `packages/shared`:
 
 - `SessionSummary`
 - `SessionDetail`
+- `RenameSessionRequest`
 - `ChatMessage`
 - `PromptRequest`
 - `StreamEvent`
+
+Suggested session metadata fields:
+
+- `name` for the explicit editable title
+- `displayName` for the resolved title shown in the UI
+- `hasCustomName` to distinguish explicit names from fallback labels
 
 Suggested `ChatMessage` shape:
 
@@ -375,6 +418,8 @@ Suggested `ChatMessage` shape:
 - connect to `GET /api/sessions`
 - create new sessions from the UI
 - load session transcript on selection
+- allow editing session titles
+- show the first user message as the default label until a custom title is saved
 
 #### Phase 3: streaming chat
 
@@ -410,7 +455,9 @@ Add structured logs for:
 Backend tests should cover:
 
 - workspace creation on first session
+- workspace template initialization on first session
 - session creation and listing
+- session rename and default-name fallback behavior
 - transcript retrieval from persisted sessions
 - streamed prompt completion
 - serialization of concurrent requests to the same session
@@ -421,6 +468,7 @@ Frontend tests should cover:
 
 - session list rendering
 - selecting a session loads transcript
+- editing a session title updates the sidebar and header
 - composer submits a message and shows optimistic UI
 - streaming assistant message updates the active bubble progressively
 
@@ -430,36 +478,30 @@ Keep these seams explicit even if the first implementation is simple:
 
 - `UserContext` abstraction even though `userId` is always `anonymous`
 - `SessionStore` abstraction even though v1 uses Pi JSONL files
-- `WorkspaceProvisioner` abstraction even though v1 creates empty directories
+- `WorkspaceProvisioner` abstraction even though v1 starts from an empty placeholder template
 - transport abstraction around stream parsing if a WebSocket UI is added later
 
 ## Delivery sequence
 
-1. Scaffold npm workspaces, shared package, backend, and frontend.
-2. Implement backend bootstrap plus app-owned Pi configuration.
-3. Implement filesystem-backed workspace and session services.
-4. Implement session list, create, and detail endpoints.
+1. Scaffold npm workspaces, shared package, backend, frontend, and the placeholder workspace template.
+2. Implement backend bootstrap plus app-owned Pi configuration for OpenRouter-style OpenAI-compatible settings.
+3. Implement filesystem-backed workspace, template provisioning, and session services.
+4. Implement session list, create, detail, and rename endpoints.
 5. Implement streaming prompt endpoint and per-session locking.
-6. Implement sandboxed tool overrides and startup validation.
-7. Build frontend session list, chat view, and streaming composer.
-8. Add integration tests and tighten error handling.
+6. Implement sandboxed tool overrides and startup validation, while leaving outbound network unrestricted in v1.
+7. Build frontend session list, editable titles, chat view, and streaming composer.
+8. Make the backend serve the built frontend in production.
+9. Add integration tests and tighten error handling.
 
 ## Acceptance criteria for the prototype
 
 - A user can create a new chat session from the UI.
 - Reloading the app shows previously created sessions.
 - Selecting an existing session shows its stored conversation.
+- Session titles default to the first user message and can be edited later.
 - Sending a message streams the assistant response into the UI.
 - Restarting the backend does not lose sessions or workspace files.
+- First-time workspace creation copies the placeholder template into the shared `anonymous` workspace.
+- The backend can serve the built frontend in production.
 - The agent cannot read, write, or execute outside the user's allowed workspace.
 - The backend does not depend on ambient Pi configuration from the host machine.
-
-## Questions to resolve
-
-- Is Pi's file-based JSONL session persistence acceptable for v1 if the code keeps a clean storage abstraction for a future Postgres implementation?
-- Should the prototype use one shared `anonymous` workspace, or do you still want one workspace per session until real user accounts exist?
-- What model/provider should be the default target for the first implementation?
-- Should outbound network access in sandboxed `bash` be denied by default, or should the prototype allow a minimal package-development allowlist such as GitHub, npm, and PyPI?
-- Should a newly created workspace start completely empty, or should it be initialized from a template repository or starter files?
-- Do you want the backend to serve the built frontend bundle in production, or should frontend and backend remain separately deployed from the start?
-- Should editable session names be in scope for the initial UI, or is deriving the label from the first user message sufficient for now?
