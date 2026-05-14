@@ -267,7 +267,8 @@ describe("App", () => {
 		);
 		expect(screen.getByText("Inspect the queue")).toBeInTheDocument();
 		expect(screen.getByText("Thinking...")).toBeInTheDocument();
-		expect(getSessionSelectButton("Repository overview")).toBeDisabled();
+		expect(getSessionSelectButton("Repository overview")).toBeEnabled();
+		expect(screen.getByRole("button", { name: "New session" })).toBeEnabled();
 
 		await act(async () => {
 			resolveStream();
@@ -330,8 +331,94 @@ describe("App", () => {
 		await waitFor(() => {
 			expect(screen.getAllByText("Synthetic stream failure").length).toBeGreaterThan(1);
 		});
-		expect(screen.getByText("error")).toBeInTheDocument();
+		expect(screen.getByTitle("Synthetic stream failure")).toBeInTheDocument();
 		expect(screen.queryByText("Response saved.")).not.toBeInTheDocument();
+	});
+
+	it("allows switching sessions while another session streams in the background", async () => {
+		const user = userEvent.setup();
+		let emit!: (event: StreamEvent) => void;
+		let finishStream!: () => void;
+		let persistedFinal = false;
+
+		mockedApi.streamSessionMessage.mockImplementation(
+			async (_sessionId, _content, options) =>
+				new Promise<void>((resolve) => {
+					emit = options.onEvent;
+					finishStream = resolve;
+				}),
+		);
+
+		mockedApi.getSession.mockImplementation(async (sessionId: string) => {
+			if (persistedFinal && sessionId === "session-2") {
+				const finalDetail = createSessionDetail({
+					id: "session-2",
+					displayName: "Sandbox review",
+					name: "Sandbox review",
+					firstMessage: "Check the sandbox rules",
+					hasCustomName: true,
+					messages: [
+						createMessage("m3", "user", "Check the sandbox rules"),
+						createMessage("m4", "assistant", "The workspace guard blocks absolute paths outside the root."),
+						createMessage("m5", "user", "Background audit"),
+						createMessage("m6", "assistant", "Background work completed while another session was open."),
+					],
+				});
+
+				sessionDetails[sessionId] = finalDetail;
+				sessionList = sessionList.map((session) => (session.id === sessionId ? toSummary(finalDetail) : session));
+				return clone(finalDetail);
+			}
+
+			return clone(requireSessionDetail(sessionDetails, sessionId));
+		});
+
+		await renderApp();
+		const composer = screen.getByPlaceholderText(/Send a prompt into the workspace/i);
+		await user.type(composer, "Background audit");
+		await user.click(screen.getByRole("button", { name: "Send" }));
+
+		expect(screen.getByTitle("Opening stream...")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "New session" })).toBeEnabled();
+
+		await user.click(getSessionSelectButton("Repository overview"));
+
+		await waitFor(() => {
+			expect(screen.getByRole("heading", { name: "Repository overview" })).toBeInTheDocument();
+		});
+		expect(screen.getByPlaceholderText(/Send a prompt into the workspace/i)).toBeEnabled();
+
+		await act(async () => {
+			emit({ type: "message.assistant.delta", messageId: "assistant-stream", delta: "Background work still running." });
+		});
+		expect(screen.getByRole("heading", { name: "Repository overview" })).toBeInTheDocument();
+		expect(screen.getByTitle("Assistant is streaming...")).toBeInTheDocument();
+
+		persistedFinal = true;
+		await act(async () => {
+			emit({
+				type: "message.assistant.done",
+				message: createMessage(
+					"m6",
+					"assistant",
+					"Background work completed while another session was open.",
+					"complete",
+				),
+			});
+			emit({ type: "session.done", sessionId: "session-2" });
+			finishStream();
+		});
+
+		await waitFor(() => {
+			expect(screen.getByTitle("Response saved.")).toBeInTheDocument();
+		});
+		expect(screen.getByRole("heading", { name: "Repository overview" })).toBeInTheDocument();
+
+		await user.click(getSessionSelectButton("Sandbox review"));
+
+		await waitFor(() => {
+			expect(screen.getByText("Background work completed while another session was open.")).toBeInTheDocument();
+		});
 	});
 
 	it("streaming assistant updates the active bubble progressively", async () => {

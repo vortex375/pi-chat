@@ -12,7 +12,10 @@ type StreamStatus = {
 	label: string;
 };
 
+type SessionActivity = StreamStatus;
+
 const EMPTY_SESSION_LABEL = "(no messages)";
+const DONE_BADGE_TIMEOUT_MS = 2500;
 
 function buildLocalMessage(
 	role: "user" | "assistant",
@@ -106,6 +109,26 @@ function statusTone(phase: StreamPhase): string {
 	return "text-stone-400";
 }
 
+function hasLiveStream(activity: SessionActivity | undefined): boolean {
+	return activity?.phase === "connecting" || activity?.phase === "streaming";
+}
+
+function sessionBadgeTone(phase: StreamPhase): string {
+	if (phase === "error") {
+		return "bg-rose-300";
+	}
+
+	if (phase === "done") {
+		return "bg-emerald-300";
+	}
+
+	if (phase === "streaming" || phase === "connecting") {
+		return "bg-amber-200";
+	}
+
+	return "bg-stone-500";
+}
+
 function confirmDeleteSession(displayName: string): boolean {
 	return window.confirm(`Delete "${displayName}"? This cannot be undone.`);
 }
@@ -115,8 +138,8 @@ function SessionSidebar(props: {
 	selectedSessionId: string | null;
 	isLoading: boolean;
 	isCreating: boolean;
-	isBusy: boolean;
 	deletingSessionId: string | null;
+	activityBySessionId: Record<string, SessionActivity | undefined>;
 	errorMessage: string | null;
 	onCreateSession: () => void;
 	onSelectSession: (sessionId: string) => void;
@@ -132,7 +155,7 @@ function SessionSidebar(props: {
 				<button
 					type="button"
 					onClick={props.onCreateSession}
-					disabled={props.isCreating || props.isBusy}
+					disabled={props.isCreating}
 					className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3.5 py-1.5 text-sm font-medium text-amber-100 transition hover:border-amber-200/50 hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-40"
 				>
 					{props.isCreating ? "Creating..." : "New session"}
@@ -163,6 +186,8 @@ function SessionSidebar(props: {
 					props.sessions.map((session) => {
 						const isSelected = session.id === props.selectedSessionId;
 						const isDeleting = session.id === props.deletingSessionId;
+						const activity = props.activityBySessionId[session.id];
+						const isStreaming = hasLiveStream(activity);
 						return (
 							<div
 								key={session.id}
@@ -175,8 +200,7 @@ function SessionSidebar(props: {
 								<button
 									type="button"
 									onClick={() => props.onSelectSession(session.id)}
-									disabled={props.isBusy}
-									className="min-w-0 flex-1 text-left disabled:cursor-not-allowed disabled:opacity-40"
+									className="min-w-0 flex-1 text-left"
 								>
 									<div className="flex items-start justify-between gap-3">
 										<div className="min-w-0">
@@ -186,9 +210,19 @@ function SessionSidebar(props: {
 									</div>
 								</button>
 								<div className="flex shrink-0 flex-col items-end gap-2">
-									<p className="text-[11px] uppercase tracking-[0.2em] text-stone-500">
-										{formatTime(session.modifiedAt)}
-									</p>
+									<div className="flex items-center gap-2">
+										{activity ? (
+											<span
+												title={activity.label}
+												className={`h-2.5 w-2.5 rounded-full ${sessionBadgeTone(activity.phase)} ${hasLiveStream(activity) ? "animate-pulse" : ""}`}
+											>
+												<span className="sr-only">{activity.phase}</span>
+											</span>
+										) : null}
+										<p className="text-[11px] uppercase tracking-[0.2em] text-stone-500">
+											{formatTime(session.modifiedAt)}
+										</p>
+									</div>
 									<button
 										type="button"
 										onClick={() => {
@@ -198,7 +232,7 @@ function SessionSidebar(props: {
 
 											props.onDeleteSession(session.id);
 										}}
-										disabled={props.isBusy}
+										disabled={isDeleting || isStreaming}
 										aria-label={`Delete ${session.displayName}`}
 										className="rounded-full border border-rose-400/25 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-rose-200 transition hover:border-rose-300/45 hover:text-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
 									>
@@ -455,33 +489,108 @@ export function App() {
 	const [sessions, setSessions] = useState<SessionSummary[]>([]);
 	const [sessionsState, setSessionsState] = useState<LoadState>("loading");
 	const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-	const [selectedSession, setSelectedSession] = useState<SessionDetail | null>(null);
+	const [sessionDetailsById, setSessionDetailsById] = useState<Record<string, SessionDetail>>({});
+	const [sessionActivityById, setSessionActivityById] = useState<Record<string, SessionActivity | undefined>>({});
 	const [selectedSessionState, setSelectedSessionState] = useState<LoadState>("idle");
 	const [composerValue, setComposerValue] = useState("");
 	const [sidebarError, setSidebarError] = useState<string | null>(null);
 	const [chatError, setChatError] = useState<string | null>(null);
 	const [sessionActionError, setSessionActionError] = useState<string | null>(null);
-	const [streamStatus, setStreamStatus] = useState<StreamStatus>({ phase: "idle", label: "Ready." });
 	const [isCreatingSession, setIsCreatingSession] = useState(false);
 	const [isRenamingSession, setIsRenamingSession] = useState(false);
 	const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
-	const [isStreaming, setIsStreaming] = useState(false);
 	const [isScrollPinned, setIsScrollPinned] = useState(true);
 	const loadCounterRef = useRef(0);
 	const messageViewportRef = useRef<HTMLDivElement | null>(null);
-	const streamAbortRef = useRef<AbortController | null>(null);
+	const streamAbortControllersRef = useRef(new Map<string, AbortController>());
+	const activityTimeoutsRef = useRef(new Map<string, number>());
+
+	const clearActivityTimeout = (sessionId: string) => {
+		const timeoutId = activityTimeoutsRef.current.get(sessionId);
+		if (timeoutId === undefined) {
+			return;
+		}
+
+		window.clearTimeout(timeoutId);
+		activityTimeoutsRef.current.delete(sessionId);
+	};
+
+	const setSessionActivity = (sessionId: string, activity: SessionActivity | null) => {
+		clearActivityTimeout(sessionId);
+
+		setSessionActivityById((current) => {
+			if (!activity) {
+				if (!(sessionId in current)) {
+					return current;
+				}
+
+				const next = { ...current };
+				delete next[sessionId];
+				return next;
+			}
+
+			return { ...current, [sessionId]: activity };
+		});
+
+		if (activity?.phase === "done") {
+			const timeoutId = window.setTimeout(() => {
+				activityTimeoutsRef.current.delete(sessionId);
+				setSessionActivityById((current) => {
+					const currentActivity = current[sessionId];
+					if (!currentActivity || currentActivity.phase !== "done") {
+						return current;
+					}
+
+					const next = { ...current };
+					delete next[sessionId];
+					return next;
+				});
+			}, DONE_BADGE_TIMEOUT_MS);
+
+			activityTimeoutsRef.current.set(sessionId, timeoutId);
+		}
+	};
+
+	const upsertSessionDetail = (detail: SessionDetail) => {
+		setSessionDetailsById((current) => ({
+			...current,
+			[detail.id]: detail,
+		}));
+	};
+
+	const updateSessionDetail = (sessionId: string, updater: (detail: SessionDetail) => SessionDetail) => {
+		setSessionDetailsById((current) => {
+			const detail = current[sessionId];
+			if (!detail) {
+				return current;
+			}
+
+			return {
+				...current,
+				[sessionId]: updater(detail),
+			};
+		});
+	};
 
 	useEffect(() => {
 		void refreshSessions();
 		return () => {
-			streamAbortRef.current?.abort();
+			for (const controller of streamAbortControllersRef.current.values()) {
+				controller.abort();
+			}
+
+			for (const timeoutId of activityTimeoutsRef.current.values()) {
+				window.clearTimeout(timeoutId);
+			}
+
+			streamAbortControllersRef.current.clear();
+			activityTimeoutsRef.current.clear();
 		};
 	}, []);
 
 	useEffect(() => {
 		if (sessions.length === 0) {
 			setSelectedSessionId(null);
-			setSelectedSession(null);
 			setSelectedSessionState("idle");
 			return;
 		}
@@ -495,13 +604,13 @@ export function App() {
 
 	useEffect(() => {
 		if (!selectedSessionId) {
-			setSelectedSession(null);
 			setSelectedSessionState(sessions.length === 0 ? "idle" : "ready");
 			return;
 		}
 
 		const requestId = ++loadCounterRef.current;
-		setSelectedSessionState("loading");
+		const hasCachedDetail = sessionDetailsById[selectedSessionId] !== undefined;
+		setSelectedSessionState(hasCachedDetail ? "ready" : "loading");
 		setChatError(null);
 
 		void getSession(selectedSessionId)
@@ -509,14 +618,16 @@ export function App() {
 				if (loadCounterRef.current !== requestId) {
 					return;
 				}
-				setSelectedSession(detail);
+				upsertSessionDetail(detail);
 				setSelectedSessionState("ready");
 			})
 			.catch((error: unknown) => {
 				if (loadCounterRef.current !== requestId) {
 					return;
 				}
-				setSelectedSessionState("error");
+				if (!hasCachedDetail) {
+					setSelectedSessionState("error");
+				}
 				setChatError(error instanceof Error ? error.message : String(error));
 			});
 	}, [selectedSessionId, sessions.length]);
@@ -528,11 +639,11 @@ export function App() {
 		}
 
 		const frame = requestAnimationFrame(() => {
-			viewport.scrollTo({ top: viewport.scrollHeight, behavior: isStreaming ? "auto" : "smooth" });
+			viewport.scrollTo({ top: viewport.scrollHeight, behavior: hasLiveStream(selectedSessionId ? sessionActivityById[selectedSessionId] : undefined) ? "auto" : "smooth" });
 		});
 
 		return () => cancelAnimationFrame(frame);
-	}, [isScrollPinned, isStreaming, selectedSession]);
+	}, [isScrollPinned, selectedSessionId, sessionActivityById, sessionDetailsById]);
 
 	async function refreshSessions(): Promise<void> {
 		setSessionsState("loading");
@@ -551,7 +662,7 @@ export function App() {
 	async function refreshCurrentSession(sessionId: string): Promise<void> {
 		const [detail, nextSessions] = await Promise.all([getSession(sessionId), listSessions()]);
 		setSessions(sortSessions(nextSessions));
-		setSelectedSession((current) => (current?.id === sessionId ? detail : current));
+		upsertSessionDetail(detail);
 	}
 
 	async function handleCreateSession(): Promise<void> {
@@ -561,10 +672,8 @@ export function App() {
 		try {
 			const detail = await createSession();
 			setSessions((current) => upsertSummary(current, detail));
-			setSelectedSession(detail);
-			startTransition(() => {
-				setSelectedSessionId(detail.id);
-			});
+			upsertSessionDetail(detail);
+			setSelectedSessionId(detail.id);
 		} catch (error) {
 			setSidebarError(error instanceof Error ? error.message : String(error));
 		} finally {
@@ -573,6 +682,7 @@ export function App() {
 	}
 
 	async function handleRenameSession(name: string): Promise<void> {
+		const selectedSession = selectedSessionId ? sessionDetailsById[selectedSessionId] ?? null : null;
 		if (!selectedSession) {
 			return;
 		}
@@ -582,7 +692,7 @@ export function App() {
 
 		try {
 			const detail = await renameSession(selectedSession.id, name);
-			setSelectedSession(detail);
+			upsertSessionDetail(detail);
 			setSessions((current) => upsertSummary(current, detail));
 		} catch (error) {
 			setSessionActionError(error instanceof Error ? error.message : String(error));
@@ -594,6 +704,10 @@ export function App() {
 
 	async function handleDeleteSession(sessionId: string): Promise<void> {
 		if (!sessions.some((session) => session.id === sessionId)) {
+			return;
+		}
+
+		if (hasLiveStream(sessionActivityById[sessionId])) {
 			return;
 		}
 
@@ -610,9 +724,19 @@ export function App() {
 			await deleteSession(sessionId);
 			const remainingSessions = sessions.filter((session) => session.id !== sessionId);
 			setSessions(remainingSessions);
+			clearActivityTimeout(sessionId);
+			setSessionActivity(sessionId, null);
+			setSessionDetailsById((current) => {
+				if (!(sessionId in current)) {
+					return current;
+				}
+
+				const next = { ...current };
+				delete next[sessionId];
+				return next;
+			});
 
 			if (isDeletingSelectedSession) {
-				setSelectedSession(null);
 				setChatError(null);
 
 				startTransition(() => {
@@ -632,7 +756,12 @@ export function App() {
 	}
 
 	async function handleComposerSubmit(): Promise<void> {
-		if (!selectedSession || isStreaming) {
+		const selectedSession = selectedSessionId ? sessionDetailsById[selectedSessionId] ?? null : null;
+		if (!selectedSession) {
+			return;
+		}
+
+		if (hasLiveStream(selectedSessionId ? sessionActivityById[selectedSessionId] : undefined)) {
 			return;
 		}
 
@@ -643,33 +772,25 @@ export function App() {
 
 		setComposerValue("");
 		setChatError(null);
-		setStreamStatus({ phase: "connecting", label: "Opening stream..." });
-		setIsStreaming(true);
 
 		const streamingSessionId = selectedSession.id;
 
 		const optimistic = createOptimisticDetail(selectedSession, prompt);
-		setSelectedSession(optimistic.detail);
+		upsertSessionDetail(optimistic.detail);
 		setSessions((current) => upsertSummary(current, optimistic.detail));
+		setSessionActivity(streamingSessionId, { phase: "connecting", label: "Opening stream..." });
 
 		const abortController = new AbortController();
-		streamAbortRef.current = abortController;
+		streamAbortControllersRef.current.set(streamingSessionId, abortController);
 		let streamFailed = false;
 
 		const updateStreamingSession = (updater: (detail: SessionDetail) => SessionDetail) => {
-			setSelectedSession((current) => {
-				if (!current || current.id !== streamingSessionId) {
-					return current;
-				}
-
-				return updater(current);
-			});
+			updateSessionDetail(streamingSessionId, updater);
 		};
 
 		const markStreamError = (message: string) => {
 			streamFailed = true;
-			setChatError(message);
-			setStreamStatus({ phase: "error", label: message });
+			setSessionActivity(streamingSessionId, { phase: "error", label: message });
 			updateStreamingSession((current) =>
 				updateAssistantMessage(current, optimistic.assistantId, (assistantMessage) => ({
 					...assistantMessage,
@@ -688,12 +809,12 @@ export function App() {
 					}
 
 					if (event.type === "session.started") {
-						setStreamStatus({ phase: "connecting", label: "Session accepted. Waiting for response..." });
+						setSessionActivity(streamingSessionId, { phase: "connecting", label: "Session accepted. Waiting for response..." });
 						return;
 					}
 
 					if (event.type === "message.assistant.delta") {
-						setStreamStatus({ phase: "streaming", label: "Assistant is streaming..." });
+						setSessionActivity(streamingSessionId, { phase: "streaming", label: "Assistant is streaming..." });
 						updateStreamingSession((current) =>
 							updateAssistantMessage(current, optimistic.assistantId, (message) => ({
 								...message,
@@ -705,23 +826,23 @@ export function App() {
 					}
 
 					if (event.type === "message.assistant.done") {
-						setStreamStatus({ phase: "streaming", label: "Persisting assistant reply..." });
+						setSessionActivity(streamingSessionId, { phase: "streaming", label: "Persisting assistant reply..." });
 						updateStreamingSession((current) => updateAssistantMessage(current, optimistic.assistantId, () => event.message));
 						return;
 					}
 
 					if (event.type === "tool.start") {
-						setStreamStatus({ phase: "streaming", label: `Running ${event.toolName}...` });
+						setSessionActivity(streamingSessionId, { phase: "streaming", label: `Running ${event.toolName}...` });
 						return;
 					}
 
 					if (event.type === "tool.update") {
-						setStreamStatus({ phase: "streaming", label: `${event.toolName}: ${event.content || "working"}` });
+						setSessionActivity(streamingSessionId, { phase: "streaming", label: `${event.toolName}: ${event.content || "working"}` });
 						return;
 					}
 
 					if (event.type === "tool.end") {
-						setStreamStatus({ phase: "streaming", label: `${event.toolName} finished.` });
+						setSessionActivity(streamingSessionId, { phase: "streaming", label: `${event.toolName} finished.` });
 						return;
 					}
 
@@ -731,7 +852,7 @@ export function App() {
 					}
 
 					if (event.type === "session.done") {
-						setStreamStatus({ phase: "done", label: "Response saved." });
+						setSessionActivity(streamingSessionId, { phase: "done", label: "Response saved." });
 					}
 				},
 			});
@@ -741,7 +862,7 @@ export function App() {
 			}
 
 			await refreshCurrentSession(streamingSessionId);
-			setStreamStatus({ phase: "done", label: "Response saved." });
+			setSessionActivity(streamingSessionId, { phase: "done", label: "Response saved." });
 		} catch (error) {
 			if (abortController.signal.aborted) {
 				markStreamError("The stream was interrupted.");
@@ -750,14 +871,16 @@ export function App() {
 				markStreamError(message);
 			}
 		} finally {
-			streamAbortRef.current = null;
-			setIsStreaming(false);
+			streamAbortControllersRef.current.delete(streamingSessionId);
 		}
 	}
 
 	const isDeletingSession = deletingSessionId !== null;
-	const isBusy = isStreaming || isCreatingSession || isRenamingSession || isDeletingSession;
-	const selectedSessionDisplay = selectedSession ?? null;
+	const selectedSessionDisplay = selectedSessionId ? sessionDetailsById[selectedSessionId] ?? null : null;
+	const selectedSessionActivity = selectedSessionId ? sessionActivityById[selectedSessionId] : undefined;
+	const selectedStreamStatus = selectedSessionActivity ?? { phase: "idle", label: "Ready." };
+	const selectedStreamError = selectedSessionActivity?.phase === "error" ? selectedSessionActivity.label : null;
+	const isSelectedSessionStreaming = hasLiveStream(selectedSessionActivity);
 
 	return (
 		<div className="flex h-dvh overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.14),_transparent_28%),linear-gradient(180deg,_#1a1410_0%,_#0b0907_100%)] px-3 py-3 text-stone-100 sm:px-4 sm:py-4 lg:px-5 lg:py-5">
@@ -767,8 +890,8 @@ export function App() {
 					selectedSessionId={selectedSessionId}
 					isLoading={sessionsState === "loading"}
 					isCreating={isCreatingSession}
-					isBusy={isBusy}
 					deletingSessionId={deletingSessionId}
+					activityBySessionId={sessionActivityById}
 					errorMessage={sidebarError}
 					onCreateSession={() => void handleCreateSession()}
 					onSelectSession={(sessionId) => startTransition(() => setSelectedSessionId(sessionId))}
@@ -777,9 +900,9 @@ export function App() {
 
 				<main className="relative flex min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.14),_transparent_38%),linear-gradient(180deg,_rgba(28,23,19,0.98),_rgba(12,10,9,0.98))] shadow-[0_30px_90px_rgba(0,0,0,0.32)]">
 					<div className="absolute right-3 top-3 z-10 rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[11px] tracking-[0.02em] text-stone-300 backdrop-blur-sm sm:right-4 sm:top-4">
-						<span className={`font-medium uppercase tracking-[0.18em] ${statusTone(streamStatus.phase)}`}>{streamStatus.phase}</span>
+						<span className={`font-medium uppercase tracking-[0.18em] ${statusTone(selectedStreamStatus.phase)}`}>{selectedStreamStatus.phase}</span>
 						<span className="mx-1.5 text-stone-500">/</span>
-						<span>{streamStatus.label}</span>
+						<span>{selectedStreamStatus.label}</span>
 					</div>
 					<div className="border-b border-white/10 px-4 py-3 sm:px-5 sm:py-3">
 						<p className="text-xs uppercase tracking-[0.35em] text-stone-400">Conversation</p>
@@ -788,7 +911,7 @@ export function App() {
 								<EditableSessionTitle
 									value={selectedSessionDisplay.name ?? ""}
 									displayName={selectedSessionDisplay.displayName}
-									disabled={isStreaming}
+									disabled={isSelectedSessionStreaming}
 									pending={isRenamingSession}
 									isDeleting={deletingSessionId === selectedSessionDisplay.id}
 									errorMessage={sessionActionError}
@@ -808,8 +931,8 @@ export function App() {
 
 					<div className="flex min-h-0 flex-1 flex-col px-2.5 pb-2.5 pt-2.5 sm:px-3.5 sm:pb-3.5 sm:pt-3">
 
-						{chatError ? (
-							<p className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{chatError}</p>
+						{chatError || selectedStreamError ? (
+							<p className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{chatError ?? selectedStreamError}</p>
 						) : null}
 
 						<div
@@ -819,7 +942,7 @@ export function App() {
 								const remaining = element.scrollHeight - element.scrollTop - element.clientHeight;
 								setIsScrollPinned(remaining < 40);
 							}}
-							className={`${chatError ? "mt-3" : "mt-0"} flex min-h-0 flex-1 flex-col overflow-y-auto rounded-[1.5rem] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] px-2.5 py-3 sm:px-4`}
+							className={`${chatError || selectedStreamError ? "mt-3" : "mt-0"} flex min-h-0 flex-1 flex-col overflow-y-auto rounded-[1.5rem] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] px-2.5 py-3 sm:px-4`}
 						>
 							{selectedSessionState === "loading" ? (
 								<div className="space-y-4">
@@ -857,7 +980,7 @@ export function App() {
 								value={composerValue}
 								onChange={setComposerValue}
 								onSubmit={() => void handleComposerSubmit()}
-								disabled={!selectedSessionDisplay || isStreaming}
+								disabled={!selectedSessionDisplay || isSelectedSessionStreaming}
 							/>
 						</div>
 					</div>
