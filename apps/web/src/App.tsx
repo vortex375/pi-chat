@@ -2,7 +2,7 @@ import { startTransition, useEffect, useRef, useState } from "react";
 import { getFallbackSessionTitle, type ChatMessage, type SessionDetail, type SessionSummary, type StreamEvent } from "@pi-chat/shared";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { createSession, getSession, listSessions, renameSession, streamSessionMessage } from "./api";
+import { createSession, deleteSession, getSession, listSessions, renameSession, streamSessionMessage } from "./api";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 type StreamPhase = "idle" | "connecting" | "streaming" | "done" | "error";
@@ -106,15 +106,21 @@ function statusTone(phase: StreamPhase): string {
 	return "text-stone-400";
 }
 
+function confirmDeleteSession(displayName: string): boolean {
+	return window.confirm(`Delete "${displayName}"? This cannot be undone.`);
+}
+
 function SessionSidebar(props: {
 	sessions: SessionSummary[];
 	selectedSessionId: string | null;
 	isLoading: boolean;
 	isCreating: boolean;
 	isBusy: boolean;
+	deletingSessionId: string | null;
 	errorMessage: string | null;
 	onCreateSession: () => void;
 	onSelectSession: (sessionId: string) => void;
+	onDeleteSession: (sessionId: string) => void;
 }) {
 	return (
 		<aside className="flex w-full flex-col rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(31,24,20,0.96),rgba(17,14,12,0.98))] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.35)] lg:max-w-[19rem]">
@@ -156,28 +162,50 @@ function SessionSidebar(props: {
 				) : (
 					props.sessions.map((session) => {
 						const isSelected = session.id === props.selectedSessionId;
+						const isDeleting = session.id === props.deletingSessionId;
 						return (
-							<button
+							<div
 								key={session.id}
-								type="button"
-								onClick={() => props.onSelectSession(session.id)}
-								disabled={props.isBusy}
-								className={`rounded-[1.4rem] border px-3.5 py-3 text-left transition ${
+								className={`flex items-start gap-3 rounded-[1.4rem] border px-3.5 py-3 transition ${
 									isSelected
 										? "border-amber-300/40 bg-amber-300/12 text-stone-50 shadow-[0_12px_40px_rgba(245,158,11,0.12)]"
 										: "border-white/8 bg-white/4 text-stone-200 hover:border-white/14 hover:bg-white/7"
-								} disabled:cursor-not-allowed disabled:opacity-40`}
+								}`}
 							>
-								<div className="flex items-start justify-between gap-3">
-									<div>
-										<p className="line-clamp-2 text-sm font-medium leading-6">{session.displayName}</p>
-										<p className="mt-1 line-clamp-2 text-xs leading-5 text-stone-400">{session.firstMessage}</p>
+								<button
+									type="button"
+									onClick={() => props.onSelectSession(session.id)}
+									disabled={props.isBusy}
+									className="min-w-0 flex-1 text-left disabled:cursor-not-allowed disabled:opacity-40"
+								>
+									<div className="flex items-start justify-between gap-3">
+										<div className="min-w-0">
+											<p className="line-clamp-2 text-sm font-medium leading-6">{session.displayName}</p>
+											<p className="mt-1 line-clamp-2 text-xs leading-5 text-stone-400">{session.firstMessage}</p>
+										</div>
 									</div>
-									<p className="shrink-0 text-[11px] uppercase tracking-[0.2em] text-stone-500">
+								</button>
+								<div className="flex shrink-0 flex-col items-end gap-2">
+									<p className="text-[11px] uppercase tracking-[0.2em] text-stone-500">
 										{formatTime(session.modifiedAt)}
 									</p>
+									<button
+										type="button"
+										onClick={() => {
+											if (!confirmDeleteSession(session.displayName)) {
+												return;
+											}
+
+											props.onDeleteSession(session.id);
+										}}
+										disabled={props.isBusy}
+										aria-label={`Delete ${session.displayName}`}
+										className="rounded-full border border-rose-400/25 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-rose-200 transition hover:border-rose-300/45 hover:text-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+									>
+										{isDeleting ? "Deleting..." : "Delete"}
+									</button>
 								</div>
-							</button>
+							</div>
 						);
 					})
 				)}
@@ -191,8 +219,10 @@ function EditableSessionTitle(props: {
 	displayName: string;
 	disabled: boolean;
 	pending: boolean;
+	isDeleting: boolean;
 	errorMessage: string | null;
 	onRename: (name: string) => Promise<void>;
+	onDelete: () => Promise<void>;
 }) {
 	const [isEditing, setIsEditing] = useState(false);
 	const [draft, setDraft] = useState(props.value || props.displayName);
@@ -214,6 +244,20 @@ function EditableSessionTitle(props: {
 						className="rounded-full border border-white/12 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-stone-300 transition hover:border-white/30 hover:text-stone-100 disabled:cursor-not-allowed disabled:opacity-40"
 					>
 						Rename
+					</button>
+					<button
+						type="button"
+						onClick={() => {
+							if (!confirmDeleteSession(props.displayName)) {
+								return;
+							}
+
+							void props.onDelete().catch(() => {});
+						}}
+						disabled={props.disabled || props.pending || props.isDeleting}
+						className="rounded-full border border-rose-400/25 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-rose-200 transition hover:border-rose-300/45 hover:text-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+					>
+						{props.isDeleting ? "Deleting..." : "Delete"}
 					</button>
 				</div>
 				{props.errorMessage ? <p className="mt-3 text-sm text-rose-300">{props.errorMessage}</p> : null}
@@ -416,10 +460,11 @@ export function App() {
 	const [composerValue, setComposerValue] = useState("");
 	const [sidebarError, setSidebarError] = useState<string | null>(null);
 	const [chatError, setChatError] = useState<string | null>(null);
-	const [renameError, setRenameError] = useState<string | null>(null);
+	const [sessionActionError, setSessionActionError] = useState<string | null>(null);
 	const [streamStatus, setStreamStatus] = useState<StreamStatus>({ phase: "idle", label: "Ready." });
 	const [isCreatingSession, setIsCreatingSession] = useState(false);
 	const [isRenamingSession, setIsRenamingSession] = useState(false);
+	const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
 	const [isStreaming, setIsStreaming] = useState(false);
 	const [isScrollPinned, setIsScrollPinned] = useState(true);
 	const loadCounterRef = useRef(0);
@@ -533,17 +578,56 @@ export function App() {
 		}
 
 		setIsRenamingSession(true);
-		setRenameError(null);
+		setSessionActionError(null);
 
 		try {
 			const detail = await renameSession(selectedSession.id, name);
 			setSelectedSession(detail);
 			setSessions((current) => upsertSummary(current, detail));
 		} catch (error) {
-			setRenameError(error instanceof Error ? error.message : String(error));
+			setSessionActionError(error instanceof Error ? error.message : String(error));
 			throw error;
 		} finally {
 			setIsRenamingSession(false);
+		}
+	}
+
+	async function handleDeleteSession(sessionId: string): Promise<void> {
+		if (!sessions.some((session) => session.id === sessionId)) {
+			return;
+		}
+
+		const isDeletingSelectedSession = selectedSessionId === sessionId;
+		setDeletingSessionId(sessionId);
+
+		if (isDeletingSelectedSession) {
+			setSessionActionError(null);
+		} else {
+			setSidebarError(null);
+		}
+
+		try {
+			await deleteSession(sessionId);
+			const remainingSessions = sessions.filter((session) => session.id !== sessionId);
+			setSessions(remainingSessions);
+
+			if (isDeletingSelectedSession) {
+				setSelectedSession(null);
+				setChatError(null);
+
+				startTransition(() => {
+					setSelectedSessionId(remainingSessions[0]?.id ?? null);
+				});
+			}
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			if (isDeletingSelectedSession) {
+				setSessionActionError(message);
+			} else {
+				setSidebarError(message);
+			}
+		} finally {
+			setDeletingSessionId((current) => (current === sessionId ? null : current));
 		}
 	}
 
@@ -671,7 +755,8 @@ export function App() {
 		}
 	}
 
-	const isBusy = isStreaming || isCreatingSession || isRenamingSession;
+	const isDeletingSession = deletingSessionId !== null;
+	const isBusy = isStreaming || isCreatingSession || isRenamingSession || isDeletingSession;
 	const selectedSessionDisplay = selectedSession ?? null;
 
 	return (
@@ -683,9 +768,11 @@ export function App() {
 					isLoading={sessionsState === "loading"}
 					isCreating={isCreatingSession}
 					isBusy={isBusy}
+					deletingSessionId={deletingSessionId}
 					errorMessage={sidebarError}
 					onCreateSession={() => void handleCreateSession()}
 					onSelectSession={(sessionId) => startTransition(() => setSelectedSessionId(sessionId))}
+					onDeleteSession={(sessionId) => void handleDeleteSession(sessionId)}
 				/>
 
 				<main className="relative flex min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.14),_transparent_38%),linear-gradient(180deg,_rgba(28,23,19,0.98),_rgba(12,10,9,0.98))] shadow-[0_30px_90px_rgba(0,0,0,0.32)]">
@@ -703,8 +790,10 @@ export function App() {
 									displayName={selectedSessionDisplay.displayName}
 									disabled={isStreaming}
 									pending={isRenamingSession}
-									errorMessage={renameError}
+									isDeleting={deletingSessionId === selectedSessionDisplay.id}
+									errorMessage={sessionActionError}
 									onRename={handleRenameSession}
+									onDelete={() => handleDeleteSession(selectedSessionDisplay.id)}
 								/>
 							</div>
 						) : (

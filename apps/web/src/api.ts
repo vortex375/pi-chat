@@ -25,19 +25,26 @@ async function readErrorMessage(response: Response): Promise<string> {
 	return `${response.status} ${response.statusText}`.trim();
 }
 
-async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+async function request(path: string, init?: RequestInit): Promise<Response> {
+	const headers = new Headers(init?.headers);
+	if (init?.body !== undefined && !headers.has("content-type")) {
+		headers.set("content-type", "application/json");
+	}
+
 	const response = await fetch(toUrl(path), {
 		...init,
-		headers: {
-			"content-type": "application/json",
-			...(init?.headers ?? {}),
-		},
+		headers,
 	});
 
 	if (!response.ok) {
 		throw new Error(await readErrorMessage(response));
 	}
 
+	return response;
+}
+
+async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+	const response = await request(path, init);
 	return (await response.json()) as T;
 }
 
@@ -78,6 +85,10 @@ export function renameSession(sessionId: string, name: string): Promise<SessionD
 		method: "PATCH",
 		body: JSON.stringify(body),
 	});
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+	await request(`/api/sessions/${sessionId}`, { method: "DELETE" });
 }
 
 export async function streamSessionMessage(

@@ -7,6 +7,7 @@ import * as api from "./api";
 
 vi.mock("./api", () => ({
 	createSession: vi.fn(),
+	deleteSession: vi.fn(),
 	getSession: vi.fn(),
 	listSessions: vi.fn(),
 	renameSession: vi.fn(),
@@ -83,6 +84,18 @@ function requireSessionDetail(sessions: Record<string, SessionDetail>, sessionId
 	return detail;
 }
 
+function getSessionSelectButton(displayName: string): HTMLButtonElement {
+	const button = screen
+		.getAllByRole("button", { name: new RegExp(displayName, "i") })
+		.find((candidate) => candidate.textContent?.includes(displayName));
+
+	if (!(button instanceof HTMLButtonElement)) {
+		throw new Error(`Missing session selection button: ${displayName}`);
+	}
+
+	return button;
+}
+
 describe("App", () => {
 	let sessionDetails: Record<string, SessionDetail>;
 	let sessionList: SessionSummary[];
@@ -150,6 +163,10 @@ describe("App", () => {
 			sessionList = sessionList.map((session) => (session.id === sessionId ? toSummary(next) : session));
 			return clone(next);
 		});
+		mockedApi.deleteSession.mockImplementation(async (sessionId: string) => {
+			delete sessionDetails[sessionId];
+			sessionList = sessionList.filter((session) => session.id !== sessionId);
+		});
 		mockedApi.streamSessionMessage.mockImplementation(async () => {});
 	});
 
@@ -163,7 +180,7 @@ describe("App", () => {
 	it("renders the session list from the server", async () => {
 		await renderApp();
 
-		expect(screen.getByRole("button", { name: /Repository overview/i })).toBeInTheDocument();
+		expect(getSessionSelectButton("Repository overview")).toBeInTheDocument();
 		expect(screen.getByRole("heading", { name: "Sandbox review" })).toBeInTheDocument();
 	});
 
@@ -171,7 +188,7 @@ describe("App", () => {
 		const user = userEvent.setup();
 		await renderApp();
 
-		await user.click(screen.getByRole("button", { name: /Repository overview/i }));
+		await user.click(getSessionSelectButton("Repository overview"));
 
 		await waitFor(() => {
 			expect(screen.getByRole("heading", { name: "Repository overview" })).toBeInTheDocument();
@@ -193,6 +210,39 @@ describe("App", () => {
 			expect(screen.getByRole("heading", { name: "Runtime audit" })).toBeInTheDocument();
 		});
 		expect(screen.getAllByText("Runtime audit").length).toBeGreaterThan(1);
+	});
+
+	it("deletes the selected session and focuses the next one", async () => {
+		const user = userEvent.setup();
+		const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+		await renderApp();
+
+		await user.click(screen.getByRole("button", { name: "Delete" }));
+
+		expect(confirmSpy).toHaveBeenCalledWith('Delete "Sandbox review"? This cannot be undone.');
+		expect(mockedApi.deleteSession).toHaveBeenCalledWith("session-2");
+
+		await waitFor(() => {
+			expect(screen.getByRole("heading", { name: "Repository overview" })).toBeInTheDocument();
+		});
+		expect(screen.queryByRole("button", { name: /Sandbox review/i })).not.toBeInTheDocument();
+
+		confirmSpy.mockRestore();
+	});
+
+	it("deletes a session directly from the sidebar", async () => {
+		const user = userEvent.setup();
+		const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+		await renderApp();
+
+		await user.click(screen.getByRole("button", { name: "Delete Repository overview" }));
+
+		expect(confirmSpy).toHaveBeenCalledWith('Delete "Repository overview"? This cannot be undone.');
+		expect(mockedApi.deleteSession).toHaveBeenCalledWith("session-1");
+		expect(screen.queryByRole("button", { name: /Repository overview/i })).not.toBeInTheDocument();
+		expect(screen.getByRole("heading", { name: "Sandbox review" })).toBeInTheDocument();
+
+		confirmSpy.mockRestore();
 	});
 
 	it("composer submits a message and shows optimistic UI", async () => {
@@ -217,7 +267,7 @@ describe("App", () => {
 		);
 		expect(screen.getByText("Inspect the queue")).toBeInTheDocument();
 		expect(screen.getByText("Thinking...")).toBeInTheDocument();
-		expect(screen.getByRole("button", { name: /Repository overview/i })).toBeDisabled();
+		expect(getSessionSelectButton("Repository overview")).toBeDisabled();
 
 		await act(async () => {
 			resolveStream();

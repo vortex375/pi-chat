@@ -230,7 +230,7 @@ describe("createApp", () => {
 		});
 	});
 
-	it("creates, lists, fetches, and renames sessions through the API", async () => {
+	it("creates, lists, fetches, renames, and deletes sessions through the API", async () => {
 		const fixture = createConfigFixture();
 		const app = createApp({
 			config: fixture.config,
@@ -250,6 +250,9 @@ describe("createApp", () => {
 			url: `/api/sessions/${created.id}`,
 			payload: { name: "Renamed session" },
 		});
+		const deleteResponse = await app.inject({ method: "DELETE", url: `/api/sessions/${created.id}` });
+		const listAfterDeleteResponse = await app.inject({ method: "GET", url: "/api/sessions" });
+		const detailAfterDeleteResponse = await app.inject({ method: "GET", url: `/api/sessions/${created.id}` });
 
 		await app.close();
 
@@ -257,8 +260,11 @@ describe("createApp", () => {
 		expect(listResponse.statusCode).toBe(200);
 		expect(detailResponse.statusCode).toBe(200);
 		expect(renameResponse.statusCode).toBe(200);
+		expect(deleteResponse.statusCode).toBe(204);
 		expect(listResponse.json()).toHaveLength(1);
+		expect(listAfterDeleteResponse.json()).toHaveLength(0);
 		expect(detailResponse.json().id).toBe(created.id);
+		expect(detailAfterDeleteResponse.statusCode).toBe(404);
 		expect(renameResponse.json().name).toBe("Renamed session");
 		expect(renameResponse.json().displayName).toBe("Renamed session");
 	});
@@ -280,11 +286,13 @@ describe("createApp", () => {
 			url: "/api/sessions/missing-session",
 			payload: { name: "Does not exist" },
 		});
+		const deleteResponse = await app.inject({ method: "DELETE", url: "/api/sessions/missing-session" });
 
 		await app.close();
 
 		expect(getResponse.statusCode).toBe(404);
 		expect(patchResponse.statusCode).toBe(404);
+		expect(deleteResponse.statusCode).toBe(404);
 	});
 
 	it("rejects patch requests without a name field", async () => {

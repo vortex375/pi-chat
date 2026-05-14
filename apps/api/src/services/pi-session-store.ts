@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { rm } from "node:fs/promises";
+import { dirname, resolve, sep } from "node:path";
 import {
 	SessionManager,
 	type SessionInfo,
@@ -98,6 +99,25 @@ export class PiSessionStore {
 		return this.toSessionDetail(sessionManager);
 	}
 
+	async deleteSession(userId: string, sessionId: string): Promise<boolean> {
+		const paths = this.userWorkspaceService.ensureUserReady(userId);
+		const sessions = await SessionManager.list(paths.workspaceDir, paths.sessionsDir);
+		const match = sessions.find((session) => session.id === sessionId);
+
+		if (!match) {
+			return false;
+		}
+
+		const sessionsDir = resolve(paths.sessionsDir);
+		const sessionPath = resolve(match.path);
+		if (!this.isSessionPathInDirectory(sessionPath, sessionsDir)) {
+			return false;
+		}
+
+		await rm(sessionPath, { force: true });
+		return true;
+	}
+
 	async getSessionPath(userId: string, sessionId: string): Promise<string | undefined> {
 		const paths = this.userWorkspaceService.ensureUserReady(userId);
 		const sessions = await SessionManager.list(paths.workspaceDir, paths.sessionsDir);
@@ -127,6 +147,10 @@ export class PiSessionStore {
 		mkdirSync(dirname(sessionFile), { recursive: true });
 		const lines = [JSON.stringify(header), ...sessionManager.getEntries().map((entry) => JSON.stringify(entry))];
 		writeFileSync(sessionFile, `${lines.join("\n")}\n`, "utf-8");
+	}
+
+	private isSessionPathInDirectory(sessionPath: string, sessionsDir: string): boolean {
+		return sessionPath.startsWith(`${sessionsDir}${sep}`);
 	}
 
 	private toSessionDetail(sessionManager: SessionManager): SessionDetail {

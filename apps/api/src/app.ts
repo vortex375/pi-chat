@@ -171,6 +171,29 @@ export function createApp(options: CreateAppOptions) {
 		},
 	);
 
+	app.delete(
+		"/api/sessions/:sessionId",
+		{
+			schema: {
+				params: Type.Object({ sessionId: Type.String() }),
+				response: {
+					204: Type.Null(),
+					404: NotFoundSchema,
+				},
+			},
+		},
+		async (request, reply) => {
+			const params = request.params as { sessionId: string };
+			const deleted = await app.sessionStore.deleteSession(app.config.defaultUserId, params.sessionId);
+
+			if (!deleted) {
+				return reply.code(404).send({ message: "Session not found" });
+			}
+
+			return reply.code(204).send();
+		},
+	);
+
 	app.post(
 		"/api/sessions/:sessionId/messages",
 		{
