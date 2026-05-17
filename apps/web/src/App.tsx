@@ -1067,7 +1067,7 @@ export function App() {
 					isCanvasOpen ? "lg:grid-cols-[19rem_minmax(0,1fr)_24rem]" : "lg:grid-cols-[19rem_minmax(0,1fr)]"
 				}`}
 			>
-				<div className="order-2 lg:order-1 lg:min-h-0">
+				<div className="order-2 lg:col-start-1 lg:min-h-0 lg:order-none">
 					<SessionSidebar
 						sessions={sessions}
 						selectedSessionId={selectedSessionId}
@@ -1082,7 +1082,7 @@ export function App() {
 					/>
 				</div>
 
-				<main className="order-1 relative flex min-h-[24rem] shrink-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.14),_transparent_38%),linear-gradient(180deg,_rgba(28,23,19,0.98),_rgba(12,10,9,0.98))] shadow-[0_30px_90px_rgba(0,0,0,0.32)] lg:order-2 lg:min-h-0">
+				<main className="order-1 relative flex min-h-[24rem] shrink-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.14),_transparent_38%),linear-gradient(180deg,_rgba(28,23,19,0.98),_rgba(12,10,9,0.98))] shadow-[0_30px_90px_rgba(0,0,0,0.32)] lg:col-start-2 lg:min-h-0 lg:order-none">
 					<div className="absolute right-3 top-3 z-10 rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[11px] tracking-[0.02em] text-stone-300 backdrop-blur-sm sm:right-4 sm:top-4">
 						<span className={`font-medium uppercase tracking-[0.18em] ${statusTone(selectedStreamStatus.phase)}`}>{selectedStreamStatus.phase}</span>
 						<span className="mx-1.5 text-stone-500">/</span>
@@ -1189,7 +1189,7 @@ export function App() {
 							onClick={() => setIsCanvasOpen(false)}
 							className="fixed inset-0 z-10 bg-black/45 backdrop-blur-[1px] lg:hidden"
 						/>
-						<div className="fixed inset-y-3 right-3 z-20 w-[min(24rem,calc(100vw-1.5rem))] lg:static lg:z-auto lg:min-h-0 lg:w-auto">
+						<div className="fixed inset-y-3 right-3 z-20 w-[min(24rem,calc(100vw-1.5rem))] lg:col-start-3 lg:static lg:z-auto lg:min-h-0 lg:w-auto">
 							<CanvasPanel
 								browserSessionId={browserSessionIdRef.current}
 								cards={canvasSnapshot.cards}
