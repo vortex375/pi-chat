@@ -5,8 +5,8 @@
 	"type": "module",
 	"workspaces": [
 		"packages/shared",
-		"apps/api",
-		"apps/web"
+		"packages/api",
+		"packages/web"
 	],
 	"scripts": {
 		"build": "npm run build --workspace @pi-chat/shared && npm run build --workspace @pi-chat/web && npm run build --workspace @pi-chat/api",

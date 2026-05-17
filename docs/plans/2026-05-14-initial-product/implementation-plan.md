@@ -31,11 +31,10 @@ This plan assumes the initial prototype will:
 
 ```text
 pi-chat/
-  apps/
-    api/                 # Fastify backend embedding Pi and serving the web build in production
-    web/                 # React + Vite + Tailwind frontend
   packages/
+    api/                 # Fastify backend embedding Pi and serving the web build in production
     shared/              # Shared DTOs, event types, validation schemas
+    web/                 # React + Vite + Tailwind frontend
   data/
     system/              # backend-owned auth/model/config state if needed
     users/

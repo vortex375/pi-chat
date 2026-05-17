@@ -78,7 +78,7 @@ function createChatMessage(role: "user" | "assistant", content: string): ChatMes
 export function createApp(options: CreateAppOptions) {
 	const app = Fastify({ logger: options.logger ?? true });
 	const shouldServeWeb = options.config.nodeEnv === "production";
-	const webDistDir = join(options.config.projectRoot, "apps", "web", "dist");
+	const webDistDir = join(options.config.projectRoot, "packages", "web", "dist");
 
 	app.decorate("config", options.config);
 	app.decorate("canvasBuildService", options.canvasBuildService);

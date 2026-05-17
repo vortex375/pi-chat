@@ -588,14 +588,15 @@ describe("createApp", () => {
 			url: `/api/sessions/${created.id}/messages`,
 			payload: { content: "first" },
 		});
+
+		await queued.firstStarted;
+		expect(log).toEqual(["first:start"]);
+
 		const secondRequest = app.inject({
 			method: "POST",
 			url: `/api/sessions/${created.id}/messages`,
 			payload: { content: "second" },
 		});
-
-		await queued.firstStarted;
-		expect(log).toEqual(["first:start"]);
 
 		queued.firstRelease();
 		await Promise.all([firstRequest, secondRequest]);
@@ -673,7 +674,7 @@ describe("createApp", () => {
 	it("serves the built frontend in production without intercepting API routes", async () => {
 		const fixture = createConfigFixture();
 		fixture.config.nodeEnv = "production";
-		const webDistDir = join(fixture.config.projectRoot, "apps", "web", "dist");
+		const webDistDir = join(fixture.config.projectRoot, "packages", "web", "dist");
 		const assetDir = join(webDistDir, "assets");
 		mkdirSync(assetDir, { recursive: true });
 		writeFileSync(join(webDistDir, "index.html"), "<html><body><div id=\"root\">Pi Chat</div></body></html>", "utf-8");
@@ -705,7 +706,7 @@ describe("createApp", () => {
 	it("fails fast in production when index.html is missing", () => {
 		const fixture = createConfigFixture();
 		fixture.config.nodeEnv = "production";
-		const webDistDir = join(fixture.config.projectRoot, "apps", "web", "dist");
+		const webDistDir = join(fixture.config.projectRoot, "packages", "web", "dist");
 		mkdirSync(webDistDir, { recursive: true });
 
 		expect(() =>

@@ -16,7 +16,7 @@ Add a workspace-scoped canvas to Pi Chat that can display interactive custom UI 
 
 ## Current constraints
 
-- The current web UI is a two-pane layout owned almost entirely by `apps/web/src/App.tsx`.
+- The current web UI is a two-pane layout owned almost entirely by `packages/web/src/App.tsx`.
 - Session streaming state is already being moved toward per-session UI state, but there is no workspace-level UI state domain yet.
 - The backend exposes session APIs only. There is no canvas API, no workspace event stream, and no frontend-facing route that serves user-authored UI artifacts.
 - The agent runs inside a per-user workspace sandbox and currently only has generic file tools plus `bash`.
@@ -286,7 +286,7 @@ Recommended behavior:
 - Narrow screens:
   - canvas becomes a drawer or slide-over controlled by the same open/close state
 
-Suggested UI additions in `apps/web/src/App.tsx`:
+Suggested UI additions in `packages/web/src/App.tsx`:
 
 - app-level canvas manifest and diagnostics loaded from `GET /api/canvas`
 - browser-local canvas visibility state held in React state only

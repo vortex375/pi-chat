@@ -96,7 +96,7 @@ Add a dedicated service rather than embedding prompt logic into `PiSessionStore`
 
 Suggested files:
 
-- `apps/api/src/services/session-naming-service.ts`
+- `packages/api/src/services/session-naming-service.ts`
 
 Suggested responsibilities:
 
@@ -212,14 +212,14 @@ If the model returns unusable output:
 
 ## Files Likely To Change
 
-- `apps/api/src/services/pi-session-store.ts`
-- `apps/api/src/services/pi-agent-service.ts`
-- `apps/api/src/services/session-naming-service.ts`
-- `apps/api/src/app.ts`
-- `apps/api/src/app.test.ts`
-- `apps/api/src/services/pi-agent-service.test.ts` or a new focused service test file
-- `apps/web/src/App.tsx`
-- `apps/web/src/App.test.tsx`
+- `packages/api/src/services/pi-session-store.ts`
+- `packages/api/src/services/pi-agent-service.ts`
+- `packages/api/src/services/session-naming-service.ts`
+- `packages/api/src/app.ts`
+- `packages/api/src/app.test.ts`
+- `packages/api/src/services/pi-agent-service.test.ts` or a new focused service test file
+- `packages/web/src/App.tsx`
+- `packages/web/src/App.test.tsx`
 
 ## Review Decisions
 

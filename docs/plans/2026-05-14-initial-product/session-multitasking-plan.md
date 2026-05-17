@@ -6,7 +6,7 @@ Allow the web UI to keep streaming a response for one session while the user swi
 
 ## Current behavior
 
-- The web app keeps streaming state in a single global slice inside [apps/web/src/App.tsx](/home/vortex/work/projects/pi-chat/apps/web/src/App.tsx).
+- The web app keeps streaming state in a single global slice inside [packages/web/src/App.tsx](/home/vortex/work/projects/pi-chat/packages/web/src/App.tsx).
 - The sidebar receives a global `isBusy` flag and disables session selection while any stream is active.
 - Streaming updates are applied only through `selectedSession`, so the in-flight transcript is tied to whichever session is currently open.
 - The top-right conversation status pill is driven by a single `streamStatus` object, but `SessionSummary` in [packages/shared/src/index.ts](/home/vortex/work/projects/pi-chat/packages/shared/src/index.ts) has no per-session activity field for the sidebar.
@@ -26,7 +26,7 @@ This state should be UI-local only. It does not need backend persistence for the
 
 ### 2. Decouple stream updates from the selected session
 
-Refactor the streaming path in [apps/web/src/App.tsx](/home/vortex/work/projects/pi-chat/apps/web/src/App.tsx) so a stream always updates the owning session by id, regardless of which session is currently selected.
+Refactor the streaming path in [packages/web/src/App.tsx](/home/vortex/work/projects/pi-chat/packages/web/src/App.tsx) so a stream always updates the owning session by id, regardless of which session is currently selected.
 
 Planned changes:
 
@@ -77,7 +77,7 @@ If we later need persistence across reloads or across browser tabs, extend `Sess
 
 ### Frontend state changes
 
-In [apps/web/src/App.tsx](/home/vortex/work/projects/pi-chat/apps/web/src/App.tsx):
+In [packages/web/src/App.tsx](/home/vortex/work/projects/pi-chat/packages/web/src/App.tsx):
 
 - Introduce `sessionDetailsById` state and derive `selectedSessionDisplay` from `selectedSessionId`.
 - Introduce `sessionActivityById` state for ephemeral activity.
@@ -87,7 +87,7 @@ In [apps/web/src/App.tsx](/home/vortex/work/projects/pi-chat/apps/web/src/App.ts
 
 ### Sidebar rendering changes
 
-In [apps/web/src/App.tsx](/home/vortex/work/projects/pi-chat/apps/web/src/App.tsx), `SessionSidebar`:
+In [packages/web/src/App.tsx](/home/vortex/work/projects/pi-chat/packages/web/src/App.tsx), `SessionSidebar`:
 
 - Accept the per-session activity map or a derived lookup.
 - Show an inline status chip/spinner for sessions with non-idle activity.
@@ -117,7 +117,7 @@ That should be deferred unless the implementation shows a real need.
 
 ## Test plan
 
-Update [apps/web/src/App.test.tsx](/home/vortex/work/projects/pi-chat/apps/web/src/App.test.tsx) with focused behavior tests:
+Update [packages/web/src/App.test.tsx](/home/vortex/work/projects/pi-chat/packages/web/src/App.test.tsx) with focused behavior tests:
 
 - streaming in session A does not disable selecting session B
 - after switching to session B, session A continues receiving streamed deltas and completion

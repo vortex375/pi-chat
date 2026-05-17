@@ -132,18 +132,18 @@ Operational note:
 
 ## Files Likely To Change
 
-- `apps/api/src/env.ts`
+- `packages/api/src/env.ts`
   - add resolved paths for the agent resource template directory and provisioned runtime directory
   - validate the template directory exists
 
-- `apps/api/src/services/pi-agent-service.ts`
+- `packages/api/src/services/pi-agent-service.ts`
   - load synchronized agent resources from the runtime mirror when creating the resource loader
   - pass explicit append prompt and skill paths into `DefaultResourceLoader`
 
-- `apps/api/src/services/`
+- `packages/api/src/services/`
   - add `agent-resource-synchronizer.ts`
 
-- `apps/api/src/index.ts`
+- `packages/api/src/index.ts`
   - synchronize agent resources during backend startup before serving requests
 
 - `templates/agent-resources/`

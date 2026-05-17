@@ -22,9 +22,9 @@ Today the backend requires:
 
 That surface is misleading for two reasons.
 
-First, `PI_PROVIDER` suggests the backend can select between materially different provider types, but `apps/api/src/env.ts` currently validates `PI_OPENAI_BASE_URL` and `PI_OPENAI_API_KEY` unconditionally and only accepts `openrouter` as a provider.
+First, `PI_PROVIDER` suggests the backend can select between materially different provider types, but `packages/api/src/env.ts` currently validates `PI_OPENAI_BASE_URL` and `PI_OPENAI_API_KEY` unconditionally and only accepts `openrouter` as a provider.
 
-Second, `apps/api/src/services/pi-agent-service.ts` registers the configured provider as `openai-completions` with a manual base URL, manual API key, and a single manually declared model. That means the backend is not using the Pi SDK's built-in provider catalog and auth conventions as intended.
+Second, `packages/api/src/services/pi-agent-service.ts` registers the configured provider as `openai-completions` with a manual base URL, manual API key, and a single manually declared model. That means the backend is not using the Pi SDK's built-in provider catalog and auth conventions as intended.
 
 The result is a config surface that is broader in name than in behavior and narrower in implementation than the SDK can support.
 
@@ -32,10 +32,10 @@ The result is a config surface that is broader in name than in behavior and narr
 
 ### Current backend behavior
 
-- `apps/api/src/env.ts`
+- `packages/api/src/env.ts`
   - requires `PI_MODEL_ID`, `PI_OPENAI_BASE_URL`, and `PI_OPENAI_API_KEY` for every startup
   - accepts `PI_PROVIDER` but only allows `openrouter`
-- `apps/api/src/services/pi-agent-service.ts`
+- `packages/api/src/services/pi-agent-service.ts`
   - calls `authStorage.setRuntimeApiKey(this.config.piProvider, providerApiKey)`
   - manually registers the provider with `api: "openai-completions"`
   - manually injects `baseUrl`, `apiKey`, and one model definition
@@ -137,7 +137,7 @@ This is the smallest change that makes the surface honest and aligns the app wit
 
 ### 1. Simplify env parsing
 
-Update `apps/api/src/env.ts` so that:
+Update `packages/api/src/env.ts` so that:
 
 - `PI_PROVIDER` and `PI_MODEL_ID` remain the only Pi-specific required env vars in the common path
 - provider validation is based on built-in Pi provider IDs that the backend intends to support, not on an OpenAI-compatible assumption
@@ -148,7 +148,7 @@ Because this is still an early prototype, make this as a direct breaking cleanup
 
 ### 2. Stop manually recreating built-in providers
 
-Update `apps/api/src/services/pi-agent-service.ts` so that built-in providers use the SDK directly:
+Update `packages/api/src/services/pi-agent-service.ts` so that built-in providers use the SDK directly:
 
 - create `AuthStorage` with the backend-owned auth file path as today
 - create `ModelRegistry` without manually registering the selected built-in provider
@@ -184,15 +184,15 @@ Document only the supported built-in-provider path.
 
 ## Files Likely To Change
 
-- `apps/api/src/env.ts`
+- `packages/api/src/env.ts`
   - simplify required Pi env validation
   - remove the OpenAI-compatible env contract entirely
 
-- `apps/api/src/env.test.ts`
+- `packages/api/src/env.test.ts`
   - replace unconditional OpenAI-specific requirements with provider-aware tests
   - remove any tests that encode the old OpenAI-compatible contract
 
-- `apps/api/src/services/pi-agent-service.ts`
+- `packages/api/src/services/pi-agent-service.ts`
   - stop manual built-in provider registration
   - use SDK-native built-in provider resolution
 

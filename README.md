@@ -36,11 +36,10 @@ The system keeps the conversation workspace isolated so the assistant can only w
 
 ```text
 pi-chat/
-  apps/
-    api/        Fastify backend and embedded Pi runtime
-    web/        React frontend
   packages/
+    api/        Fastify backend and embedded Pi runtime
     shared/     Shared DTOs and schemas
+    web/        React frontend
   data/         Runtime data, sessions, and workspaces
   templates/    Initial workspace template
   docs/         Planning and research notes
@@ -53,7 +52,7 @@ pi-chat/
 - The prototype uses the `anonymous` user and provisions one workspace for that user.
 - Shell execution is sandboxed with `bubblewrap`, and file tools are restricted to the user workspace.
 - Backend-managed custom instructions and skills live under `templates/agent-resources/` and are synchronized into `data/system/agent-resources/` during backend startup.
-- In production, the API serves the built frontend from `apps/web/dist`.
+- In production, the API serves the built frontend from `packages/web/dist`.
 
 ### Custom Backend Instructions And Skills
 
@@ -154,7 +153,7 @@ This builds shared contracts first, then the web app, then the API.
 After building, start the backend in production mode from the repository root:
 
 ```bash
-NODE_ENV=production node apps/api/dist/index.js
+NODE_ENV=production node packages/api/dist/index.js
 ```
 
-In production mode, the backend expects a built frontend at `apps/web/dist` and serves it directly.
+In production mode, the backend expects a built frontend at `packages/web/dist` and serves it directly.

@@ -28,7 +28,7 @@ Concretely:
 
 ### 1. Session list actions
 
-Update the session row actions in `apps/web/src/App.tsx` so the delete affordance no longer consumes a large share of each item.
+Update the session row actions in `packages/web/src/App.tsx` so the delete affordance no longer consumes a large share of each item.
 
 - replace the text delete pill with a compact icon button
 - keep the row focused on session name, preview, and modified time
@@ -36,7 +36,7 @@ Update the session row actions in `apps/web/src/App.tsx` so the delete affordanc
 
 ### 2. Conversation header actions
 
-Update the conversation header controls in `apps/web/src/App.tsx`.
+Update the conversation header controls in `packages/web/src/App.tsx`.
 
 - replace **Rename** with a compact icon control
 - replace **Delete** with a compact danger icon control
@@ -55,8 +55,8 @@ Rebalance the header layout so the title and stream status own the space, while 
 
 ## Files To Change
 
-- `apps/web/src/App.tsx`
-- optional supporting style changes in `apps/web/src/index.css`
+- `packages/web/src/App.tsx`
+- optional supporting style changes in `packages/web/src/index.css`
 
 ## Acceptance Criteria
 
