@@ -10,6 +10,10 @@ import {
 	type CreateAgentSessionResult,
 } from "@earendil-works/pi-coding-agent";
 import type { AppConfig } from "../env.js";
+import { CanvasBuildService } from "./canvas-build-service.js";
+import { CanvasEventBus } from "./canvas-event-bus.js";
+import { CanvasStore } from "./canvas-store.js";
+import { createCanvasToolsExtension } from "./canvas-tools-extension.js";
 import type { PiSessionStore } from "./pi-session-store.js";
 import { createWorkspaceSandboxExtension } from "./sandbox-tools.js";
 import type { UserWorkspaceService } from "./user-workspace-service.js";
@@ -44,6 +48,9 @@ export class PiAgentService {
 		private readonly config: AppConfig,
 		private readonly userWorkspaceService: UserWorkspaceService,
 		private readonly sessionStore: PiSessionStore,
+		private readonly canvasStore: CanvasStore,
+		private readonly canvasEventBus: CanvasEventBus,
+		private readonly canvasBuildService: CanvasBuildService,
 	) {
 		const providerApiKey = this.config.piOpenAiApiKey!;
 		const providerBaseUrl = this.config.piOpenAiBaseUrl!;
@@ -121,7 +128,15 @@ export class PiAgentService {
 			additionalSkillPaths: this.getAgentSkillPaths(),
 			appendSystemPrompt: this.getAgentAppendSystemPromptPaths(),
 			cwd: paths.workspaceDir,
-			extensionFactories: [createWorkspaceSandboxExtension(paths.workspaceDir)],
+			extensionFactories: [
+				createWorkspaceSandboxExtension(paths.workspaceDir),
+				createCanvasToolsExtension({
+					userId,
+					canvasBuildService: this.canvasBuildService,
+					canvasEventBus: this.canvasEventBus,
+					canvasStore: this.canvasStore,
+				}),
+			],
 			noContextFiles: true,
 			noExtensions: true,
 			noPromptTemplates: true,
@@ -141,9 +156,21 @@ export class PiAgentService {
 			resourceLoader,
 			sessionManager: SessionManager.open(sessionPath, paths.sessionsDir, paths.workspaceDir),
 			settingsManager: this.settingsManager,
-			tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
+			tools: [
+				"read",
+				"bash",
+				"edit",
+				"write",
+				"grep",
+				"find",
+				"ls",
+				"canvas_set_visibility",
+				"canvas_publish_card",
+				"canvas_remove_card",
+				"canvas_list_cards",
+				"canvas_get_diagnostics",
+			],
 		});
 	}
 }
-
 

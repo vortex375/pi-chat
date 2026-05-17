@@ -1,20 +1,29 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { Type } from "typebox";
 import {
+	CanvasSnapshotSchema,
+	CanvasPublishResultSchema,
+	CanvasRuntimeEventRequestSchema,
 	PromptRequestSchema,
+	PublishCanvasCardRequestSchema,
 	RenameSessionRequestSchema,
 	SessionDetailSchema,
 	SessionSummarySchema,
+	type CanvasEvent,
 	type ChatMessage,
 	type HealthResponse,
 	type RenameSessionRequest,
 	type StreamEvent,
 } from "@pi-chat/shared";
 import type { AppConfig } from "./env.js";
+import type { CanvasBuildService } from "./services/canvas-build-service.js";
+import type { CanvasEventBus } from "./services/canvas-event-bus.js";
+import type { CanvasRuntimeEventService } from "./services/canvas-runtime-event-service.js";
+import type { CanvasStore } from "./services/canvas-store.js";
 import type { PiAgentService } from "./services/pi-agent-service.js";
 import type { PiSessionStore } from "./services/pi-session-store.js";
 import type { SessionExecutionQueue } from "./services/session-execution-queue.js";
@@ -22,6 +31,10 @@ import type { UserWorkspaceService } from "./services/user-workspace-service.js"
 
 export interface CreateAppOptions {
 	config: AppConfig;
+	canvasBuildService: CanvasBuildService;
+	canvasEventBus: CanvasEventBus;
+	canvasRuntimeEventService: CanvasRuntimeEventService;
+	canvasStore: CanvasStore;
 	piAgentService: PiAgentService;
 	sessionStore: PiSessionStore;
 	sessionExecutionQueue: SessionExecutionQueue;
@@ -66,6 +79,10 @@ export function createApp(options: CreateAppOptions) {
 	const webDistDir = join(options.config.projectRoot, "apps", "web", "dist");
 
 	app.decorate("config", options.config);
+	app.decorate("canvasBuildService", options.canvasBuildService);
+	app.decorate("canvasEventBus", options.canvasEventBus);
+	app.decorate("canvasRuntimeEventService", options.canvasRuntimeEventService);
+	app.decorate("canvasStore", options.canvasStore);
 	app.decorate("piAgentService", options.piAgentService);
 	app.decorate("sessionStore", options.sessionStore);
 	app.decorate("sessionExecutionQueue", options.sessionExecutionQueue);
@@ -95,6 +112,241 @@ export function createApp(options: CreateAppOptions) {
 
 		return response;
 	});
+
+	app.get(
+		"/api/canvas",
+		{
+			schema: {
+				response: {
+					200: CanvasSnapshotSchema,
+				},
+			},
+		},
+		async () => app.canvasStore.getSnapshot(app.config.defaultUserId),
+	);
+
+	app.get(
+		"/api/canvas/events",
+		{
+			schema: {
+				querystring: Type.Object({
+					browserSessionId: Type.Optional(Type.String()),
+				}),
+			},
+		},
+		async (request, reply) => {
+			const params = request.query as { browserSessionId?: string };
+			const userId = app.config.defaultUserId;
+			const snapshot = await app.canvasStore.getSnapshot(userId);
+
+			reply.hijack();
+			const response = reply.raw;
+			let streamClosed = false;
+			let unsubscribe = () => {};
+
+			const closeStream = () => {
+				if (streamClosed) {
+					return;
+				}
+
+				streamClosed = true;
+				unsubscribe();
+				if (!response.writableEnded) {
+					response.end();
+				}
+			};
+
+			response.on("close", closeStream);
+			response.on("error", (error) => {
+				app.log.warn({ err: error }, "canvas event stream error");
+				closeStream();
+			});
+			response.writeHead(200, {
+				"cache-control": "no-cache, no-transform",
+				connection: "keep-alive",
+				"content-type": "text/event-stream; charset=utf-8",
+			});
+
+			const writeEvent = (event: CanvasEvent) => {
+				if (streamClosed || response.destroyed || response.writableEnded) {
+					return;
+				}
+
+				try {
+					response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+				} catch {
+					closeStream();
+				}
+			};
+
+			unsubscribe = app.canvasEventBus.subscribe(userId, params.browserSessionId, writeEvent);
+			writeEvent({
+				type: "canvas.snapshot",
+				snapshot,
+			});
+		},
+	);
+
+	app.post(
+		"/api/canvas/cards/publish",
+		{
+			schema: {
+				body: PublishCanvasCardRequestSchema,
+				response: {
+					200: CanvasPublishResultSchema,
+				},
+			},
+		},
+		async (request) => {
+			return app.canvasBuildService.publishCard(app.config.defaultUserId, request.body as never);
+		},
+	);
+
+	app.delete(
+		"/api/canvas/cards/:cardId",
+		{
+			schema: {
+				params: Type.Object({ cardId: Type.String() }),
+				response: {
+					204: Type.Null(),
+					404: NotFoundSchema,
+				},
+			},
+		},
+		async (request, reply) => {
+			const params = request.params as { cardId: string };
+			const removed = await app.canvasStore.removeCard(app.config.defaultUserId, params.cardId);
+			if (!removed) {
+				return reply.code(404).send({ message: "Canvas card not found" });
+			}
+
+			app.canvasEventBus.publish(app.config.defaultUserId, {
+				type: "canvas.card.removed",
+				cardId: params.cardId,
+			});
+			return reply.code(204).send();
+		},
+	);
+
+	app.get(
+		"/api/canvas/cards/:cardId/bundle.js",
+		{
+			schema: {
+				params: Type.Object({ cardId: Type.String() }),
+				response: {
+					404: NotFoundSchema,
+				},
+			},
+		},
+		async (request, reply) => {
+			const params = request.params as { cardId: string };
+			const card = await app.canvasStore.getCard(app.config.defaultUserId, params.cardId);
+			if (!card?.bundleUrl) {
+				return reply.code(404).send({ message: "Canvas bundle not found" });
+			}
+
+			const bundlePath = app.canvasStore.getBundlePathForCard(app.config.defaultUserId, params.cardId);
+			if (!existsSync(bundlePath)) {
+				return reply.code(404).send({ message: "Canvas bundle not found" });
+			}
+
+			return reply.type("application/javascript; charset=utf-8").send(readFileSync(bundlePath, "utf-8"));
+		},
+	);
+
+	app.post(
+		"/api/canvas/cards/:cardId/runtime-events",
+		{
+			schema: {
+				params: Type.Object({ cardId: Type.String() }),
+				body: CanvasRuntimeEventRequestSchema,
+				response: {
+					200: Type.Object({
+						acknowledged: Type.Boolean(),
+					}),
+				},
+			},
+		},
+		async (request) => {
+			const params = request.params as { cardId: string };
+			const result = await app.canvasRuntimeEventService.handleEvent(
+				app.config.defaultUserId,
+				params.cardId,
+				request.body as never,
+			);
+			return {
+				acknowledged: result.acknowledged,
+			};
+		},
+	);
+
+	app.get("/api/canvas/runtime/react.js", async (_request, reply) =>
+		reply.type("application/javascript; charset=utf-8").send(
+			[
+				"const runtime = globalThis.__PI_CHAT_CANVAS_RUNTIME__;",
+				"if (!runtime?.react) throw new Error('Pi Chat canvas React runtime is unavailable.');",
+				"const React = runtime.react;",
+				"export default React;",
+				"export const Children = React.Children;",
+				"export const Component = React.Component;",
+				"export const Fragment = React.Fragment;",
+				"export const Profiler = React.Profiler;",
+				"export const PureComponent = React.PureComponent;",
+				"export const StrictMode = React.StrictMode;",
+				"export const Suspense = React.Suspense;",
+				"export const cloneElement = React.cloneElement;",
+				"export const createContext = React.createContext;",
+				"export const createElement = React.createElement;",
+				"export const createRef = React.createRef;",
+				"export const forwardRef = React.forwardRef;",
+				"export const isValidElement = React.isValidElement;",
+				"export const lazy = React.lazy;",
+				"export const memo = React.memo;",
+				"export const startTransition = React.startTransition;",
+				"export const use = React.use;",
+				"export const useActionState = React.useActionState;",
+				"export const useCallback = React.useCallback;",
+				"export const useContext = React.useContext;",
+				"export const useDebugValue = React.useDebugValue;",
+				"export const useDeferredValue = React.useDeferredValue;",
+				"export const useEffect = React.useEffect;",
+				"export const useId = React.useId;",
+				"export const useImperativeHandle = React.useImperativeHandle;",
+				"export const useInsertionEffect = React.useInsertionEffect;",
+				"export const useLayoutEffect = React.useLayoutEffect;",
+				"export const useMemo = React.useMemo;",
+				"export const useOptimistic = React.useOptimistic;",
+				"export const useReducer = React.useReducer;",
+				"export const useRef = React.useRef;",
+				"export const useState = React.useState;",
+				"export const useSyncExternalStore = React.useSyncExternalStore;",
+				"export const useTransition = React.useTransition;",
+			].join("\n"),
+		),
+	);
+
+	app.get("/api/canvas/runtime/react-jsx-runtime.js", async (_request, reply) =>
+		reply.type("application/javascript; charset=utf-8").send(
+			[
+				"const runtime = globalThis.__PI_CHAT_CANVAS_RUNTIME__;",
+				"if (!runtime?.jsxRuntime) throw new Error('Pi Chat canvas JSX runtime is unavailable.');",
+				"export const Fragment = runtime.jsxRuntime.Fragment;",
+				"export const jsx = runtime.jsxRuntime.jsx;",
+				"export const jsxs = runtime.jsxRuntime.jsxs;",
+			].join("\n"),
+		),
+	);
+
+	app.get("/api/canvas/runtime/react-jsx-dev-runtime.js", async (_request, reply) =>
+		reply.type("application/javascript; charset=utf-8").send(
+			[
+				"const runtime = globalThis.__PI_CHAT_CANVAS_RUNTIME__;",
+				"if (!runtime?.jsxRuntime) throw new Error('Pi Chat canvas JSX dev runtime is unavailable.');",
+				"export const Fragment = runtime.jsxRuntime.Fragment;",
+				"export const jsxDEV = runtime.jsxRuntime.jsxDEV;",
+			].join("\n"),
+		),
+	);
 
 	app.get(
 		"/api/sessions",

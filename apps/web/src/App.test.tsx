@@ -8,9 +8,12 @@ import * as api from "./api";
 vi.mock("./api", () => ({
 	createSession: vi.fn(),
 	deleteSession: vi.fn(),
+	getCanvasSnapshot: vi.fn(),
 	getSession: vi.fn(),
 	listSessions: vi.fn(),
+	postCanvasRuntimeEvent: vi.fn(),
 	renameSession: vi.fn(),
+	streamCanvasEvents: vi.fn(),
 	streamSessionMessage: vi.fn(),
 }));
 
@@ -167,6 +170,13 @@ describe("App", () => {
 			delete sessionDetails[sessionId];
 			sessionList = sessionList.filter((session) => session.id !== sessionId);
 		});
+		mockedApi.getCanvasSnapshot.mockResolvedValue({
+			cards: [],
+			diagnostics: {},
+			generatedAt: new Date("2026-05-14T12:00:00.000Z").toISOString(),
+		});
+		mockedApi.postCanvasRuntimeEvent.mockImplementation(async () => {});
+		mockedApi.streamCanvasEvents.mockImplementation(async () => {});
 		mockedApi.streamSessionMessage.mockImplementation(async () => {});
 	});
 
@@ -181,6 +191,20 @@ describe("App", () => {
 		await renderApp();
 
 		expect(getSessionSelectButton("Repository overview")).toBeInTheDocument();
+		expect(screen.getByRole("heading", { name: "Sandbox review" })).toBeInTheDocument();
+		expect(screen.getByRole("heading", { name: "Canvas" })).toBeInTheDocument();
+	});
+
+	it("opens and closes the canvas panel without changing the selected session", async () => {
+		const user = userEvent.setup();
+		await renderApp();
+
+		await user.click(screen.getByRole("button", { name: "Hide canvas" }));
+		expect(screen.queryByRole("heading", { name: "Canvas" })).not.toBeInTheDocument();
+		expect(screen.getByRole("heading", { name: "Sandbox review" })).toBeInTheDocument();
+
+		await user.click(screen.getByRole("button", { name: "Open canvas" }));
+		expect(screen.getByRole("heading", { name: "Canvas" })).toBeInTheDocument();
 		expect(screen.getByRole("heading", { name: "Sandbox review" })).toBeInTheDocument();
 	});
 

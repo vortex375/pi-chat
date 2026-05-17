@@ -131,3 +131,118 @@ export const StreamEventSchema = Type.Union([
 ]);
 
 export type StreamEvent = Static<typeof StreamEventSchema>;
+
+export const CanvasCardStatusSchema = Type.Union([
+	Type.Literal("draft"),
+	Type.Literal("ready"),
+	Type.Literal("build_error"),
+	Type.Literal("runtime_error"),
+]);
+
+export type CanvasCardStatus = Static<typeof CanvasCardStatusSchema>;
+
+export const CanvasDiagnosticSchema = Type.Object({
+	id: Type.String(),
+	stage: Type.Union([Type.Literal("build"), Type.Literal("runtime")]),
+	severity: Type.Union([Type.Literal("error"), Type.Literal("warning")]),
+	message: Type.String(),
+	filePath: Type.Optional(Type.String()),
+	line: Type.Optional(Type.Number()),
+	column: Type.Optional(Type.Number()),
+	stack: Type.Optional(Type.String()),
+	createdAt: Type.String(),
+});
+
+export type CanvasDiagnostic = Static<typeof CanvasDiagnosticSchema>;
+
+export const CanvasDiagnosticsSchema = Type.Record(Type.String(), Type.Array(CanvasDiagnosticSchema));
+
+export type CanvasDiagnostics = Static<typeof CanvasDiagnosticsSchema>;
+
+export const CanvasCardSchema = Type.Object({
+	id: Type.String(),
+	title: Type.String(),
+	componentPath: Type.String(),
+	status: CanvasCardStatusSchema,
+	props: Type.Optional(Type.Unknown()),
+	createdAt: Type.String(),
+	updatedAt: Type.String(),
+	lastPublishedAt: Type.Optional(Type.String()),
+	lastReadyAt: Type.Optional(Type.String()),
+	lastMeasuredHeight: Type.Optional(Type.Number()),
+	bundleUrl: Type.Optional(Type.String()),
+});
+
+export type CanvasCard = Static<typeof CanvasCardSchema>;
+
+export const CanvasSnapshotSchema = Type.Object({
+	cards: Type.Array(CanvasCardSchema),
+	diagnostics: CanvasDiagnosticsSchema,
+	generatedAt: Type.String(),
+});
+
+export type CanvasSnapshot = Static<typeof CanvasSnapshotSchema>;
+
+export const CanvasVisibilityRequestSchema = Type.Object({
+	visibility: Type.Union([Type.Literal("open"), Type.Literal("closed")]),
+	browserSessionId: Type.Optional(Type.String()),
+	requestedAt: Type.String(),
+});
+
+export type CanvasVisibilityRequest = Static<typeof CanvasVisibilityRequestSchema>;
+
+export const PublishCanvasCardRequestSchema = Type.Object({
+	componentPath: Type.String(),
+	title: Type.String(),
+	props: Type.Optional(Type.Unknown()),
+});
+
+export type PublishCanvasCardRequest = Static<typeof PublishCanvasCardRequestSchema>;
+
+export const CanvasPublishResultSchema = Type.Object({
+	card: CanvasCardSchema,
+	diagnostics: Type.Array(CanvasDiagnosticSchema),
+	ready: Type.Boolean(),
+});
+
+export type CanvasPublishResult = Static<typeof CanvasPublishResultSchema>;
+
+export const CanvasRuntimeEventRequestSchema = Type.Object({
+	type: Type.Union([Type.Literal("ready"), Type.Literal("resize"), Type.Literal("runtime_error")]),
+	height: Type.Optional(Type.Number()),
+	message: Type.Optional(Type.String()),
+	stack: Type.Optional(Type.String()),
+	browserSessionId: Type.Optional(Type.String()),
+});
+
+export type CanvasRuntimeEventRequest = Static<typeof CanvasRuntimeEventRequestSchema>;
+
+export const CanvasEventSchema = Type.Union([
+	Type.Object({
+		type: Type.Literal("canvas.snapshot"),
+		snapshot: CanvasSnapshotSchema,
+	}),
+	Type.Object({
+		type: Type.Literal("canvas.card.published"),
+		card: CanvasCardSchema,
+	}),
+	Type.Object({
+		type: Type.Literal("canvas.card.removed"),
+		cardId: Type.String(),
+	}),
+	Type.Object({
+		type: Type.Literal("canvas.card.updated"),
+		card: CanvasCardSchema,
+	}),
+	Type.Object({
+		type: Type.Literal("canvas.card.error"),
+		cardId: Type.String(),
+		diagnostics: Type.Array(CanvasDiagnosticSchema),
+	}),
+	Type.Object({
+		type: Type.Literal("canvas.visibility.requested"),
+		request: CanvasVisibilityRequestSchema,
+	}),
+]);
+
+export type CanvasEvent = Static<typeof CanvasEventSchema>;

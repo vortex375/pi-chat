@@ -1,4 +1,7 @@
 import type {
+	CanvasEvent,
+	CanvasRuntimeEventRequest,
+	CanvasSnapshot,
 	PromptRequest,
 	RenameSessionRequest,
 	SessionDetail,
@@ -48,7 +51,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 	return (await response.json()) as T;
 }
 
-function parseStreamEvent(block: string): StreamEvent | undefined {
+function parseSseEvent<T>(block: string): T | undefined {
 	const normalizedBlock = block.replace(/\r/g, "").trim();
 	if (!normalizedBlock) {
 		return undefined;
@@ -64,7 +67,84 @@ function parseStreamEvent(block: string): StreamEvent | undefined {
 		return undefined;
 	}
 
-	return JSON.parse(data) as StreamEvent;
+	return JSON.parse(data) as T;
+}
+
+async function streamSse<T>(
+	path: string,
+	init: RequestInit,
+	options: {
+		onEvent: (event: T) => void;
+		signal?: AbortSignal;
+	},
+): Promise<void> {
+	const requestInit: RequestInit = { ...init };
+	if (options.signal) {
+		requestInit.signal = options.signal;
+	}
+
+	const response = await fetch(toUrl(path), requestInit);
+
+	if (!response.ok) {
+		throw new Error(await readErrorMessage(response));
+	}
+
+	if (!response.body) {
+		throw new Error("Streaming response body is unavailable.");
+	}
+
+	const reader = response.body.getReader();
+	const decoder = new TextDecoder();
+	let buffer = "";
+
+	while (true) {
+		const { done, value } = await reader.read();
+		buffer += decoder.decode(value, { stream: !done });
+		const normalized = buffer.replace(/\r/g, "");
+		const blocks = normalized.split("\n\n");
+		buffer = blocks.pop() ?? "";
+
+		for (const block of blocks) {
+			const event = parseSseEvent<T>(block);
+			if (event) {
+				options.onEvent(event);
+			}
+		}
+
+		if (done) {
+			break;
+		}
+	}
+
+	const tailEvent = parseSseEvent<T>(buffer);
+	if (tailEvent) {
+		options.onEvent(tailEvent);
+	}
+}
+
+export function getCanvasSnapshot(): Promise<CanvasSnapshot> {
+	return requestJson<CanvasSnapshot>("/api/canvas");
+}
+
+export function streamCanvasEvents(
+	browserSessionId: string,
+	options: {
+		onEvent: (event: CanvasEvent) => void;
+		signal?: AbortSignal;
+	},
+): Promise<void> {
+	const params = new URLSearchParams({ browserSessionId });
+	return streamSse<CanvasEvent>(`/api/canvas/events?${params.toString()}`, { method: "GET" }, options);
+}
+
+export async function postCanvasRuntimeEvent(
+	cardId: string,
+	event: CanvasRuntimeEventRequest,
+): Promise<void> {
+	await request(`/api/canvas/cards/${cardId}/runtime-events`, {
+		method: "POST",
+		body: JSON.stringify(event),
+	});
 }
 
 export function listSessions(): Promise<SessionSummary[]> {
@@ -106,45 +186,5 @@ export async function streamSessionMessage(
 		method: "POST",
 	};
 
-	if (options.signal) {
-		init.signal = options.signal;
-	}
-
-	const response = await fetch(toUrl(`/api/sessions/${sessionId}/messages`), init);
-
-	if (!response.ok) {
-		throw new Error(await readErrorMessage(response));
-	}
-
-	if (!response.body) {
-		throw new Error("Streaming response body is unavailable.");
-	}
-
-	const reader = response.body.getReader();
-	const decoder = new TextDecoder();
-	let buffer = "";
-
-	while (true) {
-		const { done, value } = await reader.read();
-		buffer += decoder.decode(value, { stream: !done });
-		const normalized = buffer.replace(/\r/g, "");
-		const blocks = normalized.split("\n\n");
-		buffer = blocks.pop() ?? "";
-
-		for (const block of blocks) {
-			const event = parseStreamEvent(block);
-			if (event) {
-				options.onEvent(event);
-			}
-		}
-
-		if (done) {
-			break;
-		}
-	}
-
-	const tailEvent = parseStreamEvent(buffer);
-	if (tailEvent) {
-		options.onEvent(tailEvent);
-	}
+	await streamSse<StreamEvent>(`/api/sessions/${sessionId}/messages`, init, options);
 }

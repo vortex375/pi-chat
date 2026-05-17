@@ -1,8 +1,30 @@
+import * as ReactNamespace from "react";
+import * as ReactJsxDevRuntime from "react/jsx-dev-runtime";
+import * as ReactJsxRuntime from "react/jsx-runtime";
 import { startTransition, useEffect, useRef, useState } from "react";
-import { getFallbackSessionTitle, type ChatMessage, type SessionDetail, type SessionSummary, type StreamEvent } from "@pi-chat/shared";
+import {
+	getFallbackSessionTitle,
+	type CanvasCard,
+	type CanvasEvent,
+	type CanvasSnapshot,
+	type ChatMessage,
+	type SessionDetail,
+	type SessionSummary,
+	type StreamEvent,
+} from "@pi-chat/shared";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { createSession, deleteSession, getSession, listSessions, renameSession, streamSessionMessage } from "./api";
+import {
+	createSession,
+	deleteSession,
+	getCanvasSnapshot,
+	getSession,
+	listSessions,
+	renameSession,
+	streamCanvasEvents,
+	streamSessionMessage,
+} from "./api";
+import { CanvasPanel } from "./components/CanvasPanel";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 type StreamPhase = "idle" | "connecting" | "streaming" | "done" | "error";
@@ -66,6 +88,18 @@ function upsertSummary(items: SessionSummary[], detail: SessionDetail): SessionS
 	const summary = toSummary(detail);
 	const next = items.filter((item) => item.id !== detail.id);
 	return sortSessions([summary, ...next]);
+}
+
+function createEmptyCanvasSnapshot(): CanvasSnapshot {
+	return {
+		cards: [],
+		diagnostics: {},
+		generatedAt: new Date(0).toISOString(),
+	};
+}
+
+function upsertCanvasCard(cards: CanvasCard[], nextCard: CanvasCard): CanvasCard[] {
+	return [nextCard, ...cards.filter((card) => card.id !== nextCard.id)];
 }
 
 function updateAssistantMessage(detail: SessionDetail, assistantId: string, updater: (message: ChatMessage) => ChatMessage): SessionDetail {
@@ -500,10 +534,15 @@ export function App() {
 	const [isRenamingSession, setIsRenamingSession] = useState(false);
 	const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
 	const [isScrollPinned, setIsScrollPinned] = useState(true);
+	const [canvasSnapshot, setCanvasSnapshot] = useState<CanvasSnapshot>(createEmptyCanvasSnapshot);
+	const [canvasState, setCanvasState] = useState<LoadState>("loading");
+	const [canvasError, setCanvasError] = useState<string | null>(null);
+	const [isCanvasOpen, setIsCanvasOpen] = useState(true);
 	const loadCounterRef = useRef(0);
 	const messageViewportRef = useRef<HTMLDivElement | null>(null);
 	const streamAbortControllersRef = useRef(new Map<string, AbortController>());
 	const activityTimeoutsRef = useRef(new Map<string, number>());
+	const browserSessionIdRef = useRef(`browser-${crypto.randomUUID()}`);
 
 	const clearActivityTimeout = (sessionId: string) => {
 		const timeoutId = activityTimeoutsRef.current.get(sessionId);
@@ -573,8 +612,25 @@ export function App() {
 	};
 
 	useEffect(() => {
+		const runtimeTarget = globalThis as typeof globalThis & {
+			__PI_CHAT_CANVAS_RUNTIME__?: {
+				react: typeof ReactNamespace;
+				jsxRuntime: typeof ReactJsxRuntime & { jsxDEV?: typeof ReactJsxDevRuntime.jsxDEV };
+			};
+		};
+
+		runtimeTarget.__PI_CHAT_CANVAS_RUNTIME__ = {
+			react: ReactNamespace,
+			jsxRuntime: {
+				...ReactJsxRuntime,
+				jsxDEV: ReactJsxDevRuntime.jsxDEV,
+			},
+		};
+
 		void refreshSessions();
+		void refreshCanvas();
 		return () => {
+			delete runtimeTarget.__PI_CHAT_CANVAS_RUNTIME__;
 			for (const controller of streamAbortControllersRef.current.values()) {
 				controller.abort();
 			}
@@ -585,6 +641,75 @@ export function App() {
 
 			streamAbortControllersRef.current.clear();
 			activityTimeoutsRef.current.clear();
+		};
+	}, []);
+
+	const applyCanvasEvent = (event: CanvasEvent) => {
+		if (event.type === "canvas.snapshot") {
+			setCanvasSnapshot(event.snapshot);
+			setCanvasState("ready");
+			setCanvasError(null);
+			return;
+		}
+
+		if (event.type === "canvas.card.published" || event.type === "canvas.card.updated") {
+			setCanvasSnapshot((current) => ({
+				...current,
+				cards: upsertCanvasCard(current.cards, event.card),
+			}));
+			setCanvasState("ready");
+			return;
+		}
+
+		if (event.type === "canvas.card.removed") {
+			setCanvasSnapshot((current) => {
+				const nextDiagnostics = { ...current.diagnostics };
+				delete nextDiagnostics[event.cardId];
+				return {
+					...current,
+					cards: current.cards.filter((card) => card.id !== event.cardId),
+					diagnostics: nextDiagnostics,
+				};
+			});
+			return;
+		}
+
+		if (event.type === "canvas.card.error") {
+			setCanvasSnapshot((current) => ({
+				...current,
+				diagnostics: {
+					...current.diagnostics,
+					[event.cardId]: event.diagnostics,
+				},
+			}));
+			return;
+		}
+
+		if (
+			event.type === "canvas.visibility.requested" &&
+			(!event.request.browserSessionId || event.request.browserSessionId === browserSessionIdRef.current)
+		) {
+			setIsCanvasOpen(event.request.visibility === "open");
+		}
+	};
+
+	useEffect(() => {
+		const abortController = new AbortController();
+
+		void streamCanvasEvents(browserSessionIdRef.current, {
+			signal: abortController.signal,
+			onEvent: applyCanvasEvent,
+		}).catch((error: unknown) => {
+			if (abortController.signal.aborted) {
+				return;
+			}
+
+			setCanvasState("error");
+			setCanvasError(error instanceof Error ? error.message : String(error));
+		});
+
+		return () => {
+			abortController.abort();
 		};
 	}, []);
 
@@ -663,6 +788,20 @@ export function App() {
 		const [detail, nextSessions] = await Promise.all([getSession(sessionId), listSessions()]);
 		setSessions(sortSessions(nextSessions));
 		upsertSessionDetail(detail);
+	}
+
+	async function refreshCanvas(): Promise<void> {
+		setCanvasState("loading");
+		setCanvasError(null);
+
+		try {
+			const snapshot = await getCanvasSnapshot();
+			setCanvasSnapshot(snapshot);
+			setCanvasState("ready");
+		} catch (error) {
+			setCanvasState("error");
+			setCanvasError(error instanceof Error ? error.message : String(error));
+		}
 	}
 
 	async function handleCreateSession(): Promise<void> {
@@ -884,7 +1023,11 @@ export function App() {
 
 	return (
 		<div className="flex h-dvh overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.14),_transparent_28%),linear-gradient(180deg,_#1a1410_0%,_#0b0907_100%)] px-3 py-3 text-stone-100 sm:px-4 sm:py-4 lg:px-5 lg:py-5">
-			<div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-3 lg:grid lg:grid-cols-[19rem_minmax(0,1fr)]">
+			<div
+				className={`mx-auto flex min-h-0 w-full max-w-[96rem] flex-1 flex-col gap-3 lg:grid ${
+					isCanvasOpen ? "lg:grid-cols-[19rem_minmax(0,1fr)_24rem]" : "lg:grid-cols-[19rem_minmax(0,1fr)]"
+				}`}
+			>
 				<SessionSidebar
 					sessions={sessions}
 					selectedSessionId={selectedSessionId}
@@ -905,28 +1048,39 @@ export function App() {
 						<span>{selectedStreamStatus.label}</span>
 					</div>
 					<div className="border-b border-white/10 px-4 py-3 sm:px-5 sm:py-3">
-						<p className="text-xs uppercase tracking-[0.35em] text-stone-400">Conversation</p>
-						{selectedSessionDisplay ? (
-							<div className="mt-2.5">
-								<EditableSessionTitle
-									value={selectedSessionDisplay.name ?? ""}
-									displayName={selectedSessionDisplay.displayName}
-									disabled={isSelectedSessionStreaming}
-									pending={isRenamingSession}
-									isDeleting={deletingSessionId === selectedSessionDisplay.id}
-									errorMessage={sessionActionError}
-									onRename={handleRenameSession}
-									onDelete={() => handleDeleteSession(selectedSessionDisplay.id)}
-								/>
+						<div className="flex items-start justify-between gap-4 pr-24">
+							<div>
+								<p className="text-xs uppercase tracking-[0.35em] text-stone-400">Conversation</p>
+								{selectedSessionDisplay ? (
+									<div className="mt-2.5">
+										<EditableSessionTitle
+											value={selectedSessionDisplay.name ?? ""}
+											displayName={selectedSessionDisplay.displayName}
+											disabled={isSelectedSessionStreaming}
+											pending={isRenamingSession}
+											isDeleting={deletingSessionId === selectedSessionDisplay.id}
+											errorMessage={sessionActionError}
+											onRename={handleRenameSession}
+											onDelete={() => handleDeleteSession(selectedSessionDisplay.id)}
+										/>
+									</div>
+								) : (
+									<div className="mt-2.5 max-w-2xl">
+										<h2 className="text-2xl font-semibold tracking-tight text-stone-50 sm:text-3xl">Build from the plan, not from stubs.</h2>
+										<p className="mt-2 text-sm leading-6 text-stone-300">
+											Create a session to start chatting with the request-scoped Pi runtime.
+										</p>
+									</div>
+								)}
 							</div>
-						) : (
-							<div className="mt-2.5 max-w-2xl">
-								<h2 className="text-2xl font-semibold tracking-tight text-stone-50 sm:text-3xl">Build from the plan, not from stubs.</h2>
-								<p className="mt-2 text-sm leading-6 text-stone-300">
-									Create a session to start chatting with the request-scoped Pi runtime.
-								</p>
-							</div>
-						)}
+							<button
+								type="button"
+								onClick={() => setIsCanvasOpen((current) => !current)}
+								className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3.5 py-2 text-[11px] font-medium uppercase tracking-[0.2em] text-cyan-100 transition hover:border-cyan-200/45 hover:bg-cyan-300/20"
+							>
+								{isCanvasOpen ? "Hide canvas" : "Open canvas"}
+							</button>
+						</div>
 					</div>
 
 					<div className="flex min-h-0 flex-1 flex-col px-2.5 pb-2.5 pt-2.5 sm:px-3.5 sm:pb-3.5 sm:pt-3">
@@ -985,6 +1139,27 @@ export function App() {
 						</div>
 					</div>
 				</main>
+
+				{isCanvasOpen ? (
+					<>
+						<button
+							type="button"
+							aria-label="Close canvas overlay"
+							onClick={() => setIsCanvasOpen(false)}
+							className="fixed inset-0 z-10 bg-black/45 backdrop-blur-[1px] lg:hidden"
+						/>
+						<div className="fixed inset-y-3 right-3 z-20 w-[min(24rem,calc(100vw-1.5rem))] lg:static lg:z-auto lg:min-h-0 lg:w-auto">
+							<CanvasPanel
+								browserSessionId={browserSessionIdRef.current}
+								cards={canvasSnapshot.cards}
+								diagnostics={canvasSnapshot.diagnostics}
+								loadState={canvasState}
+								errorMessage={canvasError}
+								onClose={() => setIsCanvasOpen(false)}
+							/>
+						</div>
+					</>
+				) : null}
 			</div>
 		</div>
 	);

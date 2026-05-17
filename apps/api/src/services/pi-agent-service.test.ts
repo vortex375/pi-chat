@@ -4,6 +4,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AppConfig } from "../env.js";
 import { AgentResourceSynchronizer } from "./agent-resource-synchronizer.js";
+import { CanvasBuildService } from "./canvas-build-service.js";
+import { CanvasEventBus } from "./canvas-event-bus.js";
+import { CanvasRuntimeEventService } from "./canvas-runtime-event-service.js";
+import { CanvasStore } from "./canvas-store.js";
 import { PiAgentService } from "./pi-agent-service.js";
 import { PiSessionStore } from "./pi-session-store.js";
 import { UserWorkspaceService } from "./user-workspace-service.js";
@@ -63,7 +67,18 @@ function createFixture() {
 		templateProvisioner,
 	});
 	const sessionStore = new PiSessionStore(userWorkspaceService);
-	const piAgentService = new PiAgentService(config, userWorkspaceService, sessionStore);
+	const canvasStore = new CanvasStore(userWorkspaceService);
+	const canvasEventBus = new CanvasEventBus();
+	const canvasRuntimeEventService = new CanvasRuntimeEventService(canvasStore, canvasEventBus);
+	const canvasBuildService = new CanvasBuildService(canvasStore, canvasEventBus, canvasRuntimeEventService);
+	const piAgentService = new PiAgentService(
+		config,
+		userWorkspaceService,
+		sessionStore,
+		canvasStore,
+		canvasEventBus,
+		canvasBuildService,
+	);
 
 	return { agentResourceDir, agentResourceTemplateDir, piAgentService, root, sessionStore, userWorkspaceService };
 }

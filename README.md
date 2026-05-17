@@ -8,7 +8,11 @@ Pi Chat is a workspace-backed chat application for persistent multi-session conv
 
 Pi Chat gives a user a chat interface with a list of saved conversations and a live conversation view.
 
+It also includes a workspace-scoped canvas where the backend agent can publish custom React cards that remain visible while the user switches chat sessions.
+
 Users can create a new chat session, return to older sessions, and see the previously stored transcript for each session.
+
+Published canvas cards belong to the workspace rather than any individual conversation, so the same canvas remains available across sessions in the current browser tab.
 
 Session titles automatically fall back to the first user message, and users can later rename any session to a custom title.
 

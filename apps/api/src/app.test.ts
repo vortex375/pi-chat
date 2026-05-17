@@ -1,10 +1,14 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import type { AppConfig } from "./env.js";
+import { CanvasBuildService } from "./services/canvas-build-service.js";
+import { CanvasEventBus } from "./services/canvas-event-bus.js";
+import { CanvasRuntimeEventService } from "./services/canvas-runtime-event-service.js";
+import { CanvasStore } from "./services/canvas-store.js";
 import { PiAgentService } from "./services/pi-agent-service.js";
 import { PiSessionStore } from "./services/pi-session-store.js";
 import { SessionExecutionQueue } from "./services/session-execution-queue.js";
@@ -15,6 +19,10 @@ const cleanupPaths: string[] = [];
 
 function createConfigFixture(): {
 	config: AppConfig;
+	canvasBuildService: CanvasBuildService;
+	canvasEventBus: CanvasEventBus;
+	canvasRuntimeEventService: CanvasRuntimeEventService;
+	canvasStore: CanvasStore;
 	piAgentService: PiAgentService;
 	sessionStore: PiSessionStore;
 	sessionExecutionQueue: SessionExecutionQueue;
@@ -59,11 +67,51 @@ function createConfigFixture(): {
 		defaultUserId: config.defaultUserId,
 		templateProvisioner,
 	});
+	const canvasStore = new CanvasStore(userWorkspaceService);
+	const canvasEventBus = new CanvasEventBus();
+	const canvasRuntimeEventService = new CanvasRuntimeEventService(canvasStore, canvasEventBus);
+	const canvasBuildService = new CanvasBuildService(canvasStore, canvasEventBus, canvasRuntimeEventService);
 	const sessionStore = new PiSessionStore(userWorkspaceService);
-	const piAgentService = new PiAgentService(config, userWorkspaceService, sessionStore);
+	const piAgentService = new PiAgentService(
+		config,
+		userWorkspaceService,
+		sessionStore,
+		canvasStore,
+		canvasEventBus,
+		canvasBuildService,
+	);
 	const sessionExecutionQueue = new SessionExecutionQueue();
 
-	return { config, piAgentService, sessionStore, sessionExecutionQueue, userWorkspaceService };
+	return {
+		config,
+		canvasBuildService,
+		canvasEventBus,
+		canvasRuntimeEventService,
+		canvasStore,
+		piAgentService,
+		sessionStore,
+		sessionExecutionQueue,
+		userWorkspaceService,
+	};
+}
+
+function createTestApp(
+	fixture: ReturnType<typeof createConfigFixture>,
+	overrides: Partial<Parameters<typeof createApp>[0]> = {},
+) {
+	return createApp({
+		config: fixture.config,
+		canvasBuildService: fixture.canvasBuildService,
+		canvasEventBus: fixture.canvasEventBus,
+		canvasRuntimeEventService: fixture.canvasRuntimeEventService,
+		canvasStore: fixture.canvasStore,
+		piAgentService: fixture.piAgentService,
+		sessionStore: fixture.sessionStore,
+		sessionExecutionQueue: fixture.sessionExecutionQueue,
+		userWorkspaceService: fixture.userWorkspaceService,
+		logger: false,
+		...overrides,
+	});
 }
 
 function parseSseEvents(body: string) {
@@ -210,14 +258,7 @@ afterEach(async () => {
 describe("createApp", () => {
 	it("returns the health response", async () => {
 		const fixture = createConfigFixture();
-		const app = createApp({
-			config: fixture.config,
-			piAgentService: fixture.piAgentService,
-			sessionStore: fixture.sessionStore,
-			sessionExecutionQueue: fixture.sessionExecutionQueue,
-			userWorkspaceService: fixture.userWorkspaceService,
-			logger: false,
-		});
+		const app = createTestApp(fixture);
 
 		const response = await app.inject({ method: "GET", url: "/api/health" });
 		await app.close();
@@ -232,14 +273,7 @@ describe("createApp", () => {
 
 	it("creates, lists, fetches, renames, and deletes sessions through the API", async () => {
 		const fixture = createConfigFixture();
-		const app = createApp({
-			config: fixture.config,
-			piAgentService: fixture.piAgentService,
-			sessionStore: fixture.sessionStore,
-			sessionExecutionQueue: fixture.sessionExecutionQueue,
-			userWorkspaceService: fixture.userWorkspaceService,
-			logger: false,
-		});
+		const app = createTestApp(fixture);
 
 		const createResponse = await app.inject({ method: "POST", url: "/api/sessions" });
 		const created = createResponse.json();
@@ -271,14 +305,7 @@ describe("createApp", () => {
 
 	it("returns 404 for unknown sessions", async () => {
 		const fixture = createConfigFixture();
-		const app = createApp({
-			config: fixture.config,
-			piAgentService: fixture.piAgentService,
-			sessionStore: fixture.sessionStore,
-			sessionExecutionQueue: fixture.sessionExecutionQueue,
-			userWorkspaceService: fixture.userWorkspaceService,
-			logger: false,
-		});
+		const app = createTestApp(fixture);
 
 		const getResponse = await app.inject({ method: "GET", url: "/api/sessions/missing-session" });
 		const patchResponse = await app.inject({
@@ -298,14 +325,7 @@ describe("createApp", () => {
 	it("rejects patch requests without a name field", async () => {
 		const fixture = createConfigFixture();
 		const created = await fixture.sessionStore.createSession("anonymous");
-		const app = createApp({
-			config: fixture.config,
-			piAgentService: fixture.piAgentService,
-			sessionStore: fixture.sessionStore,
-			sessionExecutionQueue: fixture.sessionExecutionQueue,
-			userWorkspaceService: fixture.userWorkspaceService,
-			logger: false,
-		});
+		const app = createTestApp(fixture);
 
 		const response = await app.inject({
 			method: "PATCH",
@@ -321,13 +341,8 @@ describe("createApp", () => {
 	it("streams message events and persists the completed turn", async () => {
 		const fixture = createConfigFixture();
 		const created = await fixture.sessionStore.createSession("anonymous");
-		const app = createApp({
-			config: fixture.config,
+		const app = createTestApp(fixture, {
 			piAgentService: createFakeStreamingAgentService(fixture),
-			sessionStore: fixture.sessionStore,
-			sessionExecutionQueue: fixture.sessionExecutionQueue,
-			userWorkspaceService: fixture.userWorkspaceService,
-			logger: false,
 		});
 
 		const response = await app.inject({
@@ -359,13 +374,8 @@ describe("createApp", () => {
 	it("truncates fallback session titles derived from the first user prompt", async () => {
 		const fixture = createConfigFixture();
 		const created = await fixture.sessionStore.createSession("anonymous");
-		const app = createApp({
-			config: fixture.config,
+		const app = createTestApp(fixture, {
 			piAgentService: createFakeStreamingAgentService(fixture),
-			sessionStore: fixture.sessionStore,
-			sessionExecutionQueue: fixture.sessionExecutionQueue,
-			userWorkspaceService: fixture.userWorkspaceService,
-			logger: false,
 		});
 		const prompt = "Explain how the execution queue coordinates long running workspace tasks across multiple session requests";
 
@@ -387,14 +397,7 @@ describe("createApp", () => {
 
 	it("returns 404 for a missing streaming session", async () => {
 		const fixture = createConfigFixture();
-		const app = createApp({
-			config: fixture.config,
-			piAgentService: fixture.piAgentService,
-			sessionStore: fixture.sessionStore,
-			sessionExecutionQueue: fixture.sessionExecutionQueue,
-			userWorkspaceService: fixture.userWorkspaceService,
-			logger: false,
-		});
+		const app = createTestApp(fixture);
 
 		const response = await app.inject({
 			method: "POST",
@@ -410,14 +413,7 @@ describe("createApp", () => {
 	it("rejects empty prompt payloads", async () => {
 		const fixture = createConfigFixture();
 		const created = await fixture.sessionStore.createSession("anonymous");
-		const app = createApp({
-			config: fixture.config,
-			piAgentService: fixture.piAgentService,
-			sessionStore: fixture.sessionStore,
-			sessionExecutionQueue: fixture.sessionExecutionQueue,
-			userWorkspaceService: fixture.userWorkspaceService,
-			logger: false,
-		});
+		const app = createTestApp(fixture);
 
 		const response = await app.inject({
 			method: "POST",
@@ -433,13 +429,8 @@ describe("createApp", () => {
 	it("streams an error event when prompt execution fails", async () => {
 		const fixture = createConfigFixture();
 		const created = await fixture.sessionStore.createSession("anonymous");
-		const app = createApp({
-			config: fixture.config,
+		const app = createTestApp(fixture, {
 			piAgentService: createThrowingAgentService(),
-			sessionStore: fixture.sessionStore,
-			sessionExecutionQueue: fixture.sessionExecutionQueue,
-			userWorkspaceService: fixture.userWorkspaceService,
-			logger: false,
 		});
 
 		const response = await app.inject({
@@ -459,13 +450,8 @@ describe("createApp", () => {
 		const created = await fixture.sessionStore.createSession("anonymous");
 		const log: string[] = [];
 		const queued = createQueuedAgentService(log);
-		const app = createApp({
-			config: fixture.config,
+		const app = createTestApp(fixture, {
 			piAgentService: queued.service,
-			sessionStore: fixture.sessionStore,
-			sessionExecutionQueue: fixture.sessionExecutionQueue,
-			userWorkspaceService: fixture.userWorkspaceService,
-			logger: false,
 		});
 
 		const firstRequest = app.inject({
@@ -489,6 +475,72 @@ describe("createApp", () => {
 		expect(log).toEqual(["first:start", "first:end", "second:start", "second:end"]);
 	});
 
+	it("returns an empty canvas snapshot and persists the manifest", async () => {
+		const fixture = createConfigFixture();
+		const app = createTestApp(fixture);
+
+		const response = await app.inject({ method: "GET", url: "/api/canvas" });
+		const manifestPath = fixture.canvasStore.ensureInitialized(fixture.config.defaultUserId).manifestPath;
+		await app.close();
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			cards: [],
+			diagnostics: {},
+		});
+		expect(existsSync(manifestPath)).toBe(true);
+	});
+
+	it("publishes a canvas card and serves its bundle", async () => {
+		const fixture = createConfigFixture();
+		const paths = fixture.canvasStore.ensureInitialized("anonymous");
+		writeFileSync(
+			join(paths.canvasCardsDir, "hello-card.tsx"),
+			[
+				"export default function HelloCard(props: any) {",
+				"  return <section>{props.data?.label ?? 'Hello canvas'}</section>;",
+				"}",
+			].join("\n"),
+			"utf-8",
+		);
+		fixture.canvasEventBus.subscribe("anonymous", "browser-a", (event) => {
+			if (
+				(event.type === "canvas.card.published" || event.type === "canvas.card.updated") &&
+				event.card.componentPath === "canvas/cards/hello-card.tsx" &&
+				event.card.status === "draft"
+			) {
+				void fixture.canvasRuntimeEventService.handleEvent("anonymous", event.card.id, {
+					type: "ready",
+					browserSessionId: "browser-a",
+				});
+			}
+		});
+		const app = createTestApp(fixture);
+
+		const publishResponse = await app.inject({
+			method: "POST",
+			url: "/api/canvas/cards/publish",
+			payload: {
+				componentPath: "canvas/cards/hello-card.tsx",
+				title: "Hello card",
+				props: { label: "Hello from publish" },
+			},
+		});
+		const publishResult = publishResponse.json();
+		const bundleResponse = await app.inject({
+			method: "GET",
+			url: `/api/canvas/cards/${publishResult.card.id}/bundle.js`,
+		});
+
+		await app.close();
+
+		expect(publishResponse.statusCode).toBe(200);
+		expect(publishResult.ready).toBe(true);
+		expect(publishResult.card.status).toBe("ready");
+		expect(bundleResponse.statusCode).toBe(200);
+		expect(bundleResponse.body).toContain("HelloCard");
+	});
+
 	it("serves the built frontend in production without intercepting API routes", async () => {
 		const fixture = createConfigFixture();
 		fixture.config.nodeEnv = "production";
@@ -498,14 +550,7 @@ describe("createApp", () => {
 		writeFileSync(join(webDistDir, "index.html"), "<html><body><div id=\"root\">Pi Chat</div></body></html>", "utf-8");
 		writeFileSync(join(assetDir, "app.js"), "console.log('pi-chat');", "utf-8");
 
-		const app = createApp({
-			config: fixture.config,
-			piAgentService: fixture.piAgentService,
-			sessionStore: fixture.sessionStore,
-			sessionExecutionQueue: fixture.sessionExecutionQueue,
-			userWorkspaceService: fixture.userWorkspaceService,
-			logger: false,
-		});
+		const app = createTestApp(fixture);
 
 		const indexResponse = await app.inject({ method: "GET", url: "/" });
 		const assetResponse = await app.inject({ method: "GET", url: "/assets/app.js" });
@@ -535,16 +580,7 @@ describe("createApp", () => {
 		mkdirSync(webDistDir, { recursive: true });
 
 		expect(() =>
-			createApp({
-				config: fixture.config,
-				piAgentService: fixture.piAgentService,
-				sessionStore: fixture.sessionStore,
-				sessionExecutionQueue: fixture.sessionExecutionQueue,
-				userWorkspaceService: fixture.userWorkspaceService,
-				logger: false,
-			}),
+			createTestApp(fixture),
 		).toThrow(/Missing frontend build output/);
 	});
 });
-
-
