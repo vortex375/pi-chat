@@ -1,6 +1,5 @@
 import { completeSimple } from "@earendil-works/pi-ai";
 import { getFallbackSessionTitle } from "@pi-chat/shared";
-import type { AppConfig } from "../env.js";
 import type { PiAgentService } from "./pi-agent-service.js";
 import type { PiSessionStore, SessionNamingSnapshot } from "./pi-session-store.js";
 
@@ -52,13 +51,30 @@ export function normalizeGeneratedSessionTitle(value: string | undefined): strin
 
 export class SessionNamingService {
 	constructor(
-		private readonly config: AppConfig,
 		private readonly piAgentService: PiAgentService,
 		private readonly sessionStore: PiSessionStore,
 	) {}
 
 	async generateTitle(userId: string, sessionId: string, snapshot: SessionNamingSnapshot): Promise<string | undefined> {
 		const model = this.piAgentService.getConfiguredModel();
+		const requestAuth = await this.piAgentService.getConfiguredRequestAuth();
+		const completionOptions: {
+			apiKey?: string;
+			headers?: Record<string, string>;
+			maxTokens: number;
+			temperature: number;
+		} = {
+			maxTokens: SESSION_NAMING_MAX_TOKENS,
+			temperature: 0,
+		};
+
+		if (requestAuth.apiKey !== undefined) {
+			completionOptions.apiKey = requestAuth.apiKey;
+		}
+		if (requestAuth.headers !== undefined) {
+			completionOptions.headers = requestAuth.headers;
+		}
+
 		const response = await completeSimple(
 			model,
 			{
@@ -71,11 +87,7 @@ export class SessionNamingService {
 					},
 				],
 			},
-			{
-				apiKey: this.config.piOpenAiApiKey!,
-				maxTokens: SESSION_NAMING_MAX_TOKENS,
-				temperature: 0,
-			},
+			completionOptions,
 		);
 		const title = normalizeGeneratedSessionTitle(extractAssistantText(response.content));
 		if (!title) {

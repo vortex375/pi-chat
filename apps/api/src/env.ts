@@ -5,7 +5,6 @@ import { parse as parseDotenv } from "dotenv";
 
 const thisDir = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(thisDir, "../../..");
-const SUPPORTED_PI_PROVIDERS = ["openrouter"] as const;
 
 export interface LoadEnvOptions {
 	envFilePath?: string;
@@ -68,41 +67,22 @@ export interface AppConfig {
 	defaultUserId: string;
 	piProvider: string;
 	piModelId: string | undefined;
-	piOpenAiBaseUrl: string | undefined;
-	piOpenAiApiKey: string | undefined;
 	sandboxRequired: boolean;
 }
 
 function validateRequiredEnv(config: AppConfig): void {
 	const missing: string[] = [];
 
+	if (!config.piProvider) {
+		missing.push("PI_PROVIDER");
+	}
+
 	if (!config.piModelId) {
 		missing.push("PI_MODEL_ID");
 	}
 
-	if (!config.piOpenAiBaseUrl) {
-		missing.push("PI_OPENAI_BASE_URL");
-	}
-
-	if (!config.piOpenAiApiKey) {
-		missing.push("PI_OPENAI_API_KEY");
-	}
-
 	if (missing.length > 0) {
 		throw new Error(`Missing required Pi configuration: ${missing.join(", ")}`);
-	}
-
-	if (!SUPPORTED_PI_PROVIDERS.includes(config.piProvider as (typeof SUPPORTED_PI_PROVIDERS)[number])) {
-		throw new Error(
-			`Unsupported PI_PROVIDER value: ${config.piProvider}. Supported values: ${SUPPORTED_PI_PROVIDERS.join(", ")}`,
-		);
-	}
-
-	const openAiBaseUrl = config.piOpenAiBaseUrl;
-	try {
-		new URL(openAiBaseUrl!);
-	} catch {
-		throw new Error(`Invalid PI_OPENAI_BASE_URL value: ${openAiBaseUrl}`);
 	}
 
 	if (!existsSync(config.workspaceTemplateDir)) {
@@ -134,10 +114,8 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env, options: LoadEnvOp
 		usersRoot: resolve(join(dataRoot, "users")),
 		workspaceTemplateDir: resolve(env.PI_CHAT_TEMPLATE_ROOT ?? join(projectRoot, "templates", "workspace")),
 		defaultUserId: env.PI_CHAT_DEFAULT_USER_ID ?? "anonymous",
-		piProvider: env.PI_PROVIDER ?? "openrouter",
+		piProvider: env.PI_PROVIDER ?? "",
 		piModelId: env.PI_MODEL_ID,
-		piOpenAiBaseUrl: env.PI_OPENAI_BASE_URL,
-		piOpenAiApiKey: env.PI_OPENAI_API_KEY,
 		sandboxRequired: parseBoolean(env.PI_SANDBOX_REQUIRED, true),
 	};
 

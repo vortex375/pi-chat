@@ -27,9 +27,8 @@ describe("loadEnv", () => {
 			PORT: "4321",
 			PI_CHAT_DATA_ROOT: join(root, "data"),
 			PI_CHAT_TEMPLATE_ROOT: templateDir,
+			PI_PROVIDER: "openrouter",
 			PI_MODEL_ID: "openai/gpt-oss-120b",
-			PI_OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
-			PI_OPENAI_API_KEY: "test-key",
 			PI_SANDBOX_REQUIRED: "false",
 		});
 
@@ -52,9 +51,8 @@ describe("loadEnv", () => {
 				"PORT=4545",
 				`PI_CHAT_DATA_ROOT=${join(root, "data")}`,
 				`PI_CHAT_TEMPLATE_ROOT=${templateDir}`,
+				"PI_PROVIDER=openrouter",
 				"PI_MODEL_ID=openai/gpt-oss-120b",
-				"PI_OPENAI_BASE_URL=https://openrouter.ai/api/v1",
-				"PI_OPENAI_API_KEY=test-key",
 				"PI_SANDBOX_REQUIRED=false",
 			].join("\n"),
 		);
@@ -69,12 +67,10 @@ describe("loadEnv", () => {
 	});
 
 	it("fails when Pi configuration is incomplete", () => {
-		expect(() => loadEnv({ PI_OPENAI_BASE_URL: "https://openrouter.ai/api/v1" })).toThrow(
-			/Missing required Pi configuration/,
-		);
+		expect(() => loadEnv({ PI_MODEL_ID: "openai/gpt-oss-120b" })).toThrow(/Missing required Pi configuration/);
 	});
 
-	it("fails on unsupported Pi provider values", () => {
+	it("fails when PI_MODEL_ID is missing", () => {
 		const root = join(tmpdir(), `pi-chat-env-provider-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		cleanupPaths.push(root);
 		const templateDir = join(root, "templates", "workspace");
@@ -83,12 +79,9 @@ describe("loadEnv", () => {
 		expect(() =>
 			loadEnv({
 				PI_CHAT_TEMPLATE_ROOT: templateDir,
-				PI_PROVIDER: "custom-provider",
-				PI_MODEL_ID: "openai/gpt-oss-120b",
-				PI_OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
-				PI_OPENAI_API_KEY: "test-key",
+				PI_PROVIDER: "openrouter",
 			}),
-		).toThrow(/Unsupported PI_PROVIDER value/);
+		).toThrow(/Missing required Pi configuration: PI_MODEL_ID/);
 	});
 
 	it("fails on invalid port values", () => {
@@ -101,15 +94,14 @@ describe("loadEnv", () => {
 			loadEnv({
 				PORT: "-1",
 				PI_CHAT_TEMPLATE_ROOT: templateDir,
+				PI_PROVIDER: "openrouter",
 				PI_MODEL_ID: "openai/gpt-oss-120b",
-				PI_OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
-				PI_OPENAI_API_KEY: "test-key",
 			}),
 		).toThrow(/Invalid PORT value/);
 	});
 
-	it("fails on invalid base url values", () => {
-		const root = join(tmpdir(), `pi-chat-env-url-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+	it("requires PI_PROVIDER explicitly", () => {
+		const root = join(tmpdir(), `pi-chat-env-provider-required-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		cleanupPaths.push(root);
 		const templateDir = join(root, "templates", "workspace");
 		mkdirSync(templateDir, { recursive: true });
@@ -118,10 +110,8 @@ describe("loadEnv", () => {
 			loadEnv({
 				PI_CHAT_TEMPLATE_ROOT: templateDir,
 				PI_MODEL_ID: "openai/gpt-oss-120b",
-				PI_OPENAI_BASE_URL: "not-a-url",
-				PI_OPENAI_API_KEY: "test-key",
 			}),
-		).toThrow(/Invalid PI_OPENAI_BASE_URL value/);
+		).toThrow(/Missing required Pi configuration: PI_PROVIDER/);
 	});
 
 	it("fails when the workspace template path does not exist", () => {
@@ -131,9 +121,8 @@ describe("loadEnv", () => {
 		expect(() =>
 			loadEnv({
 				PI_CHAT_TEMPLATE_ROOT: join(root, "missing-template"),
+				PI_PROVIDER: "openrouter",
 				PI_MODEL_ID: "openai/gpt-oss-120b",
-				PI_OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
-				PI_OPENAI_API_KEY: "test-key",
 			}),
 		).toThrow(/Workspace template directory does not exist/);
 	});
@@ -147,9 +136,8 @@ describe("loadEnv", () => {
 		expect(() =>
 			loadEnv({
 				PI_CHAT_TEMPLATE_ROOT: templateDir,
+				PI_PROVIDER: "openrouter",
 				PI_MODEL_ID: "openai/gpt-oss-120b",
-				PI_OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
-				PI_OPENAI_API_KEY: "test-key",
 				PI_SANDBOX_REQUIRED: "maybe",
 			}),
 		).toThrow(/Invalid boolean value/);

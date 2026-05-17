@@ -66,13 +66,19 @@ These files are synchronized into `data/system/agent-resources/` during backend 
 
 Set these before starting the API. When present, the backend also loads `.env` from the repository root automatically, so `npm run dev:api` will pick it up without extra shell setup:
 
+- `PI_PROVIDER`
 - `PI_MODEL_ID`
-- `PI_OPENAI_BASE_URL`
-- `PI_OPENAI_API_KEY`
+
+Provider credentials follow the Pi SDK's native environment variables for the selected provider. For example:
+
+- `OPENROUTER_API_KEY` when `PI_PROVIDER=openrouter`
+- `OPENAI_API_KEY` when `PI_PROVIDER=openai`
+- `ANTHROPIC_API_KEY` when `PI_PROVIDER=anthropic`
+
+You can also provide provider credentials through `data/system/auth.json` instead of environment variables.
 
 Optional configuration:
 
-- `PI_PROVIDER` default: `openrouter`
 - `PORT` default: `3000`
 - `HOST` default: `0.0.0.0`
 - `PI_CHAT_DATA_ROOT` default: `./data`

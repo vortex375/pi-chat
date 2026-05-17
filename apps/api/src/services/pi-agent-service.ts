@@ -18,27 +18,6 @@ import type { PiSessionStore } from "./pi-session-store.js";
 import { createWorkspaceSandboxExtension } from "./sandbox-tools.js";
 import type { UserWorkspaceService } from "./user-workspace-service.js";
 
-const ZERO_COST = {
-	input: 0,
-	output: 0,
-	cacheRead: 0,
-	cacheWrite: 0,
-};
-
-function getProviderCompat(provider: string) {
-	if (provider === "openrouter") {
-		return {
-			thinkingFormat: "openrouter" as const,
-			supportsReasoningEffort: true,
-		};
-	}
-
-	return {
-		supportsDeveloperRole: false,
-		supportsReasoningEffort: true,
-	};
-}
-
 export class PiAgentService {
 	private readonly authStorage: AuthStorage;
 	private readonly modelRegistry: ModelRegistry;
@@ -52,31 +31,9 @@ export class PiAgentService {
 		private readonly canvasEventBus: CanvasEventBus,
 		private readonly canvasBuildService: CanvasBuildService,
 	) {
-		const providerApiKey = this.config.piOpenAiApiKey!;
-		const providerBaseUrl = this.config.piOpenAiBaseUrl!;
-
 		this.authStorage = AuthStorage.create(join(this.config.systemDataDir, "auth.json"));
-		this.authStorage.setRuntimeApiKey(this.config.piProvider, providerApiKey);
-
 		this.modelRegistry = ModelRegistry.inMemory(this.authStorage);
-		this.modelRegistry.registerProvider(this.config.piProvider, {
-			api: "openai-completions",
-			apiKey: providerApiKey,
-			authHeader: true,
-			baseUrl: providerBaseUrl,
-			models: [
-				{
-					id: this.config.piModelId!,
-					name: this.config.piModelId!,
-					reasoning: true,
-					input: ["text"],
-					cost: ZERO_COST,
-					contextWindow: 256000,
-					maxTokens: 32768,
-					compat: getProviderCompat(this.config.piProvider),
-				},
-			],
-		});
+		this.assertConfiguredModelAuth();
 
 		const settings: {
 			defaultProvider: string;
@@ -97,6 +54,18 @@ export class PiAgentService {
 		this.getConfiguredModel();
 	}
 
+	private assertConfiguredModelAuth(): void {
+		const model = this.getConfiguredModel();
+		if (this.modelRegistry.hasConfiguredAuth(model)) {
+			return;
+		}
+
+		throw new Error(
+			`No authentication configured for provider "${this.config.piProvider}". ` +
+				`Set the provider's SDK-native environment variable or add credentials to ${join(this.config.systemDataDir, "auth.json")}.`,
+		);
+	}
+
 	getConfiguredModel() {
 		const model = this.modelRegistry.find(this.config.piProvider, this.config.piModelId!);
 		if (!model) {
@@ -104,6 +73,26 @@ export class PiAgentService {
 		}
 
 		return model;
+	}
+
+	async getConfiguredRequestAuth(): Promise<{ apiKey?: string; headers?: Record<string, string> }> {
+		const model = this.getConfiguredModel();
+		const resolved = await this.modelRegistry.getApiKeyAndHeaders(model);
+		if (!resolved.ok) {
+			throw new Error(
+				`Failed to resolve request auth for configured model ${this.config.piProvider}/${this.config.piModelId}: ${resolved.error}`,
+			);
+		}
+
+		const requestAuth: { apiKey?: string; headers?: Record<string, string> } = {};
+		if (resolved.apiKey !== undefined) {
+			requestAuth.apiKey = resolved.apiKey;
+		}
+		if (resolved.headers !== undefined) {
+			requestAuth.headers = resolved.headers;
+		}
+
+		return requestAuth;
 	}
 
 	private getAgentAppendSystemPromptPaths(): string[] {

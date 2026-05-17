@@ -190,7 +190,7 @@ function SessionSidebar(props: {
 	onDeleteSession: (sessionId: string) => void;
 }) {
 	return (
-		<aside className="flex w-full flex-col rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(31,24,20,0.96),rgba(17,14,12,0.98))] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.35)] lg:max-w-[19rem]">
+		<aside className="flex max-h-[45dvh] w-full flex-col rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(31,24,20,0.96),rgba(17,14,12,0.98))] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.35)] lg:max-h-none lg:max-w-[19rem]">
 			<div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
 				<div>
 					<p className="text-xs uppercase tracking-[0.35em] text-amber-300/80">Pi Chat</p>
@@ -1061,26 +1061,28 @@ export function App() {
 	const isSelectedSessionStreaming = hasLiveStream(selectedSessionActivity);
 
 	return (
-		<div className="flex h-dvh overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.14),_transparent_28%),linear-gradient(180deg,_#1a1410_0%,_#0b0907_100%)] px-3 py-3 text-stone-100 sm:px-4 sm:py-4 lg:px-5 lg:py-5">
+		<div className="flex min-h-dvh overflow-y-auto bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.14),_transparent_28%),linear-gradient(180deg,_#1a1410_0%,_#0b0907_100%)] px-3 py-3 text-stone-100 sm:px-4 sm:py-4 lg:h-dvh lg:overflow-hidden lg:px-5 lg:py-5">
 			<div
-				className={`mx-auto flex min-h-0 w-full max-w-[96rem] flex-1 flex-col gap-3 lg:grid ${
+				className={`mx-auto flex w-full max-w-[96rem] flex-col gap-3 lg:min-h-0 lg:flex-1 lg:grid ${
 					isCanvasOpen ? "lg:grid-cols-[19rem_minmax(0,1fr)_24rem]" : "lg:grid-cols-[19rem_minmax(0,1fr)]"
 				}`}
 			>
-				<SessionSidebar
-					sessions={sessions}
-					selectedSessionId={selectedSessionId}
-					isLoading={sessionsState === "loading"}
-					isCreating={isCreatingSession}
-					deletingSessionId={deletingSessionId}
-					activityBySessionId={sessionActivityById}
-					errorMessage={sidebarError}
-					onCreateSession={() => void handleCreateSession()}
-					onSelectSession={(sessionId) => startTransition(() => setSelectedSessionId(sessionId))}
-					onDeleteSession={(sessionId) => void handleDeleteSession(sessionId)}
-				/>
+				<div className="order-2 lg:order-1 lg:min-h-0">
+					<SessionSidebar
+						sessions={sessions}
+						selectedSessionId={selectedSessionId}
+						isLoading={sessionsState === "loading"}
+						isCreating={isCreatingSession}
+						deletingSessionId={deletingSessionId}
+						activityBySessionId={sessionActivityById}
+						errorMessage={sidebarError}
+						onCreateSession={() => void handleCreateSession()}
+						onSelectSession={(sessionId) => startTransition(() => setSelectedSessionId(sessionId))}
+						onDeleteSession={(sessionId) => void handleDeleteSession(sessionId)}
+					/>
+				</div>
 
-				<main className="relative flex min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.14),_transparent_38%),linear-gradient(180deg,_rgba(28,23,19,0.98),_rgba(12,10,9,0.98))] shadow-[0_30px_90px_rgba(0,0,0,0.32)]">
+				<main className="order-1 relative flex min-h-[24rem] shrink-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.14),_transparent_38%),linear-gradient(180deg,_rgba(28,23,19,0.98),_rgba(12,10,9,0.98))] shadow-[0_30px_90px_rgba(0,0,0,0.32)] lg:order-2 lg:min-h-0">
 					<div className="absolute right-3 top-3 z-10 rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[11px] tracking-[0.02em] text-stone-300 backdrop-blur-sm sm:right-4 sm:top-4">
 						<span className={`font-medium uppercase tracking-[0.18em] ${statusTone(selectedStreamStatus.phase)}`}>{selectedStreamStatus.phase}</span>
 						<span className="mx-1.5 text-stone-500">/</span>

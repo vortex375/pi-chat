@@ -42,6 +42,11 @@ function createConfigFixture(): {
 	mkdirSync(systemDataDir, { recursive: true });
 	writeFileSync(join(templateDir, "README.md"), "template", "utf-8");
 	writeFileSync(join(agentResourceTemplateDir, "append-system-prompt.md"), "test prompt", "utf-8");
+	writeFileSync(
+		join(systemDataDir, "auth.json"),
+		JSON.stringify({ openrouter: { type: "api_key", key: "test-key" } }, null, 2),
+		"utf-8",
+	);
 
 	const config: AppConfig = {
 		appVersion: "0.1.0",
@@ -58,8 +63,6 @@ function createConfigFixture(): {
 		defaultUserId: "anonymous",
 		piProvider: "openrouter",
 		piModelId: "openai/gpt-oss-120b",
-		piOpenAiBaseUrl: "https://openrouter.ai/api/v1",
-		piOpenAiApiKey: "test-key",
 		sandboxRequired: false,
 	};
 

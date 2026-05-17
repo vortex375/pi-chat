@@ -50,8 +50,6 @@ function createFixture(): {
 		defaultUserId: "anonymous",
 		piProvider: "openrouter",
 		piModelId: "openai/gpt-oss-120b",
-		piOpenAiBaseUrl: "https://openrouter.ai/api/v1",
-		piOpenAiApiKey: "test-key",
 		sandboxRequired: false,
 	};
 
@@ -108,12 +106,11 @@ describe("SessionNamingService", () => {
 		} as never);
 
 		const service = new SessionNamingService(
-			fixture.config,
 			{
 				getConfiguredModel() {
 					return {
 						api: "openai-completions",
-						baseUrl: fixture.config.piOpenAiBaseUrl!,
+						baseUrl: "https://openrouter.ai/api/v1",
 						contextWindow: 256000,
 						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 						headers: {},
@@ -124,6 +121,9 @@ describe("SessionNamingService", () => {
 						provider: fixture.config.piProvider,
 						reasoning: true,
 					};
+				},
+				async getConfiguredRequestAuth() {
+					return { apiKey: "test-key", headers: undefined };
 				},
 			} as PiAgentService,
 			fixture.sessionStore,
@@ -156,12 +156,11 @@ describe("SessionNamingService", () => {
 		completeSimple.mockRejectedValue(new Error("Synthetic title failure"));
 
 		const service = new SessionNamingService(
-			fixture.config,
 			{
 				getConfiguredModel() {
 					return {
 						api: "openai-completions",
-						baseUrl: fixture.config.piOpenAiBaseUrl!,
+						baseUrl: "https://openrouter.ai/api/v1",
 						contextWindow: 256000,
 						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 						headers: {},
@@ -172,6 +171,9 @@ describe("SessionNamingService", () => {
 						provider: fixture.config.piProvider,
 						reasoning: true,
 					};
+				},
+				async getConfiguredRequestAuth() {
+					return { apiKey: "test-key", headers: undefined };
 				},
 			} as PiAgentService,
 			fixture.sessionStore,

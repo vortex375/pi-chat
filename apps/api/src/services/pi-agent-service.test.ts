@@ -38,6 +38,11 @@ function createFixture() {
 	mkdirSync(join(agentResourceTemplateDir, "skills"), { recursive: true });
 	mkdirSync(systemDataDir, { recursive: true });
 	writeFileSync(join(templateDir, "README.md"), "template", "utf-8");
+	writeFileSync(
+		join(systemDataDir, "auth.json"),
+		JSON.stringify({ openrouter: { type: "api_key", key: "test-key" } }, null, 2),
+		"utf-8",
+	);
 	writeFileSync(join(agentResourceTemplateDir, "append-system-prompt.md"), "Follow backend template instructions.", "utf-8");
 
 	const config: AppConfig = {
@@ -55,8 +60,6 @@ function createFixture() {
 		defaultUserId: "anonymous",
 		piProvider: "openrouter",
 		piModelId: "openai/gpt-oss-120b",
-		piOpenAiBaseUrl: "https://openrouter.ai/api/v1",
-		piOpenAiApiKey: "test-key",
 		sandboxRequired: false,
 	};
 
@@ -94,6 +97,27 @@ describe("PiAgentService", () => {
 			expect(runtime.session.sessionFile).toContain(created.id);
 		} finally {
 			runtime.session.dispose();
+		}
+	});
+
+	it("accepts provider-native env auth without auth.json credentials", () => {
+		const fixture = createFixture();
+		process.env.OPENROUTER_API_KEY = "env-test-key";
+
+		try {
+			expect(
+				() =>
+					new PiAgentService(
+						fixture.piAgentService["config"],
+						fixture.userWorkspaceService,
+						fixture.sessionStore,
+						fixture.piAgentService["canvasStore"],
+						fixture.piAgentService["canvasEventBus"],
+						fixture.piAgentService["canvasBuildService"],
+					),
+			).not.toThrow();
+		} finally {
+			delete process.env.OPENROUTER_API_KEY;
 		}
 	});
 
@@ -155,5 +179,21 @@ describe("PiAgentService", () => {
 		} finally {
 			runtime.session.dispose();
 		}
+	});
+
+	it("fails fast when the configured model does not exist for the provider", () => {
+		const fixture = createFixture();
+
+		expect(
+			() =>
+				new PiAgentService(
+					{ ...fixture.piAgentService["config"], piModelId: "missing-model" },
+					fixture.userWorkspaceService,
+					fixture.sessionStore,
+					fixture.piAgentService["canvasStore"],
+					fixture.piAgentService["canvasEventBus"],
+					fixture.piAgentService["canvasBuildService"],
+				),
+		).toThrow(/Configured model not found/);
 	});
 });

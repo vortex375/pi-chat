@@ -43,7 +43,7 @@ async function main(): Promise<void> {
 		canvasEventBus,
 		canvasBuildService,
 	);
-	const sessionNamingService = new SessionNamingService(config, piAgentService, sessionStore);
+	const sessionNamingService = new SessionNamingService(piAgentService, sessionStore);
 
 	await userWorkspaceService.ensureUserReady(config.defaultUserId);
 	canvasStore.ensureInitialized(config.defaultUserId);
