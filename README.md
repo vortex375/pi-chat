@@ -2,6 +2,8 @@
 
 ## Overview
 
+![Screenshot](screenshot-2026-05-17.png)
+
 Pi Chat is a workspace-backed chat application for persistent multi-session conversations with Pi. It lets a user create sessions, revisit prior transcripts, rename sessions, and stream new assistant replies into the UI. Session data and workspace state are stored on disk so the prototype survives normal restarts. The application also constrains agent file and shell access to a dedicated workspace sandbox. In production, the backend serves the built frontend as a single application.
 
 ## What It Is
