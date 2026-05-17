@@ -8,6 +8,7 @@ import { CanvasRuntimeEventService } from "./services/canvas-runtime-event-servi
 import { CanvasStore } from "./services/canvas-store.js";
 import { PiAgentService } from "./services/pi-agent-service.js";
 import { PiSessionStore } from "./services/pi-session-store.js";
+import { SessionNamingService } from "./services/session-naming-service.js";
 import { validateSandboxPrerequisites } from "./services/sandbox-prerequisites.js";
 import { SessionExecutionQueue } from "./services/session-execution-queue.js";
 import { WorkspaceTemplateProvisioner } from "./services/workspace-template-provisioner.js";
@@ -42,6 +43,7 @@ async function main(): Promise<void> {
 		canvasEventBus,
 		canvasBuildService,
 	);
+	const sessionNamingService = new SessionNamingService(config, piAgentService, sessionStore);
 
 	await userWorkspaceService.ensureUserReady(config.defaultUserId);
 	canvasStore.ensureInitialized(config.defaultUserId);
@@ -54,6 +56,7 @@ async function main(): Promise<void> {
 		canvasStore,
 		piAgentService,
 		sessionStore,
+		sessionNamingService,
 		sessionExecutionQueue,
 		userWorkspaceService,
 		logger: true,

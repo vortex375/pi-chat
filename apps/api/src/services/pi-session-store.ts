@@ -9,6 +9,11 @@ import {
 import { getFallbackSessionTitle, type ChatMessage, type SessionDetail, type SessionSummary } from "@pi-chat/shared";
 import type { UserWorkspaceService } from "./user-workspace-service.js";
 
+export interface SessionNamingSnapshot {
+	firstUserMessage: string;
+	firstAssistantMessage: string;
+}
+
 function extractTextContent(content: unknown): string {
 	if (typeof content === "string") {
 		return content;
@@ -99,6 +104,44 @@ export class PiSessionStore {
 		return this.toSessionDetail(sessionManager);
 	}
 
+	async getSessionNamingSnapshot(userId: string, sessionId: string): Promise<SessionNamingSnapshot | undefined> {
+		const sessionManager = await this.openSession(userId, sessionId);
+		if (!sessionManager) {
+			return undefined;
+		}
+
+		const messages = this.getConversationMessages(sessionManager);
+		const userMessages = messages.filter((message) => message.role === "user");
+		const assistantMessages = messages.filter((message) => message.role === "assistant");
+		const firstUserMessage = userMessages[0]?.content.trim();
+		const firstAssistantMessage = assistantMessages[0]?.content.trim();
+
+		if (
+			userMessages.length !== 1 ||
+			assistantMessages.length !== 1 ||
+			!firstUserMessage ||
+			!firstAssistantMessage
+		) {
+			return undefined;
+		}
+
+		return {
+			firstUserMessage,
+			firstAssistantMessage,
+		};
+	}
+
+	async setSessionTitle(userId: string, sessionId: string, name: string): Promise<boolean> {
+		const sessionManager = await this.openSession(userId, sessionId);
+		if (!sessionManager) {
+			return false;
+		}
+
+		sessionManager.appendSessionInfo(name.trim());
+		this.persistSessionSnapshot(sessionManager);
+		return true;
+	}
+
 	async deleteSession(userId: string, sessionId: string): Promise<boolean> {
 		const paths = this.userWorkspaceService.ensureUserReady(userId);
 		const sessions = await SessionManager.list(paths.workspaceDir, paths.sessionsDir);
@@ -154,11 +197,7 @@ export class PiSessionStore {
 	}
 
 	private toSessionDetail(sessionManager: SessionManager): SessionDetail {
-		const branch = sessionManager.getBranch();
-		const messages = branch
-			.filter((entry): entry is SessionMessageEntry => entry.type === "message")
-			.map(toChatMessage)
-			.filter((message): message is ChatMessage => message !== undefined);
+		const messages = this.getConversationMessages(sessionManager);
 
 		const firstUserMessage = messages.find((message) => message.role === "user")?.content ?? "(no messages)";
 		const name = sessionManager.getSessionName();
@@ -181,5 +220,13 @@ export class PiSessionStore {
 		}
 
 		return detail;
+	}
+
+	private getConversationMessages(sessionManager: SessionManager): ChatMessage[] {
+		return sessionManager
+			.getBranch()
+			.filter((entry): entry is SessionMessageEntry => entry.type === "message")
+			.map(toChatMessage)
+			.filter((message): message is ChatMessage => message !== undefined);
 	}
 }

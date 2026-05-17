@@ -330,6 +330,97 @@ describe("App", () => {
 		});
 	});
 
+	it("applies a later refresh when a background-generated title arrives after streaming", async () => {
+		const user = userEvent.setup();
+		let emit!: (event: StreamEvent) => void;
+		let finishStream!: () => void;
+		let streamCompleted = false;
+		let postStreamRefreshes = 0;
+		const prompt = "Explain how the execution queue coordinates long running workspace tasks across multiple session requests";
+		const fallbackTitle = "Explain how the execution queue coordinates long running...";
+		const generatedTitle = "Execution queue audit";
+
+		mockedApi.streamSessionMessage.mockImplementation(
+			async (_sessionId, _content, options) =>
+				new Promise<void>((resolve) => {
+					emit = options.onEvent;
+					finishStream = resolve;
+				}),
+		);
+		mockedApi.getSession.mockImplementation(async (sessionId: string) => {
+			if (sessionId === "session-3" && streamCompleted) {
+				postStreamRefreshes += 1;
+				const detail =
+					postStreamRefreshes === 1
+						? createSessionDetail({
+								id: "session-3",
+								displayName: fallbackTitle,
+								firstMessage: prompt,
+								messages: [
+									createMessage("m7", "user", prompt),
+									createMessage("m8", "assistant", "It serializes work per session."),
+								],
+							})
+						: createSessionDetail({
+								id: "session-3",
+								displayName: generatedTitle,
+								name: generatedTitle,
+								hasCustomName: true,
+								firstMessage: prompt,
+								messages: [
+									createMessage("m7", "user", prompt),
+									createMessage("m8", "assistant", "It serializes work per session."),
+								],
+							});
+				sessionDetails[sessionId] = detail;
+				sessionList = [toSummary(detail), ...sessionList.filter((session) => session.id !== sessionId)];
+				return clone(detail);
+			}
+
+			return clone(requireSessionDetail(sessionDetails, sessionId));
+		});
+
+		await renderApp();
+		await user.click(screen.getByRole("button", { name: "New session" }));
+
+		const composer = screen.getByPlaceholderText(/Send a prompt into the workspace/i);
+		await user.type(composer, prompt);
+		await user.click(screen.getByRole("button", { name: "Send" }));
+
+		streamCompleted = true;
+		await act(async () => {
+			emit({
+				type: "message.assistant.done",
+				message: createMessage("m8", "assistant", "It serializes work per session.", "complete"),
+			});
+			emit({ type: "session.done", sessionId: "session-3" });
+			finishStream();
+		});
+
+		await waitFor(() => {
+			expect(screen.getByRole("heading", { name: fallbackTitle })).toBeInTheDocument();
+		});
+
+		await waitFor(
+			() => {
+				expect(screen.getByRole("heading", { name: generatedTitle })).toBeInTheDocument();
+			},
+			{ timeout: 1500 },
+		);
+		expect(getSessionSelectButton(generatedTitle)).toBeInTheDocument();
+
+		await user.click(screen.getByRole("button", { name: "Rename" }));
+		const input = screen.getByPlaceholderText("Session title");
+		await user.clear(input);
+		await user.type(input, "Manual queue audit");
+		await user.click(screen.getByRole("button", { name: "Save" }));
+
+		await waitFor(() => {
+			expect(screen.getByRole("heading", { name: "Manual queue audit" })).toBeInTheDocument();
+		});
+		expect(getSessionSelectButton("Manual queue audit")).toBeInTheDocument();
+	});
+
 	it("keeps the error state when a stream emits an error", async () => {
 		const user = userEvent.setup();
 		let emit!: (event: StreamEvent) => void;

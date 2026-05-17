@@ -26,6 +26,7 @@ import type { CanvasRuntimeEventService } from "./services/canvas-runtime-event-
 import type { CanvasStore } from "./services/canvas-store.js";
 import type { PiAgentService } from "./services/pi-agent-service.js";
 import type { PiSessionStore } from "./services/pi-session-store.js";
+import type { SessionNamingService } from "./services/session-naming-service.js";
 import type { SessionExecutionQueue } from "./services/session-execution-queue.js";
 import type { UserWorkspaceService } from "./services/user-workspace-service.js";
 
@@ -37,6 +38,7 @@ export interface CreateAppOptions {
 	canvasStore: CanvasStore;
 	piAgentService: PiAgentService;
 	sessionStore: PiSessionStore;
+	sessionNamingService: SessionNamingService;
 	sessionExecutionQueue: SessionExecutionQueue;
 	userWorkspaceService: UserWorkspaceService;
 	logger?: boolean;
@@ -85,6 +87,7 @@ export function createApp(options: CreateAppOptions) {
 	app.decorate("canvasStore", options.canvasStore);
 	app.decorate("piAgentService", options.piAgentService);
 	app.decorate("sessionStore", options.sessionStore);
+	app.decorate("sessionNamingService", options.sessionNamingService);
 	app.decorate("sessionExecutionQueue", options.sessionExecutionQueue);
 	app.decorate("userWorkspaceService", options.userWorkspaceService);
 
@@ -501,64 +504,96 @@ export function createApp(options: CreateAppOptions) {
 			try {
 				await app.sessionExecutionQueue.run(params.sessionId, async () => {
 					const runtime = await app.piAgentService.createRequestSession(userId, params.sessionId);
-				let assistantMessageId: string | undefined;
-				const unsubscribe = runtime.session.subscribe((event: any) => {
-					if (event.type === "message_start" && event.message.role === "user") {
-						writeEvent({
-							type: "message.user",
-							message: createChatMessage("user", extractTextContent(event.message.content)),
-						});
-						return;
-					}
+					let assistantMessageId: string | undefined;
+					const unsubscribe = runtime.session.subscribe((event: any) => {
+						if (event.type === "message_start" && event.message.role === "user") {
+							writeEvent({
+								type: "message.user",
+								message: createChatMessage("user", extractTextContent(event.message.content)),
+							});
+							return;
+						}
 
-					if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
-						assistantMessageId ??= randomUUID();
-						writeEvent({
-							type: "message.assistant.delta",
-							messageId: assistantMessageId,
-							delta: event.assistantMessageEvent.delta,
-						});
-						return;
-					}
+						if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+							assistantMessageId ??= randomUUID();
+							writeEvent({
+								type: "message.assistant.delta",
+								messageId: assistantMessageId,
+								delta: event.assistantMessageEvent.delta,
+							});
+							return;
+						}
 
-					if (event.type === "tool_execution_start") {
-						writeEvent({ type: "tool.start", toolName: event.toolName });
-						return;
-					}
+						if (event.type === "tool_execution_start") {
+							writeEvent({ type: "tool.start", toolName: event.toolName });
+							return;
+						}
 
-					if (event.type === "tool_execution_update") {
-						writeEvent({
-							type: "tool.update",
-							toolName: event.toolName,
-							content: extractTextContent(event.partialResult?.content ?? event.partialResult),
-						});
-						return;
-					}
+						if (event.type === "tool_execution_update") {
+							writeEvent({
+								type: "tool.update",
+								toolName: event.toolName,
+								content: extractTextContent(event.partialResult?.content ?? event.partialResult),
+							});
+							return;
+						}
 
-					if (event.type === "tool_execution_end") {
-						writeEvent({ type: "tool.end", toolName: event.toolName });
-						return;
-					}
+						if (event.type === "tool_execution_end") {
+							writeEvent({ type: "tool.end", toolName: event.toolName });
+							return;
+						}
 
-					if (event.type === "message_end" && event.message.role === "assistant") {
-						assistantMessageId ??= randomUUID();
-						writeEvent({
-							type: "message.assistant.done",
-							message: {
-								id: assistantMessageId,
-								role: "assistant",
-								content: extractTextContent(event.message.content),
-								createdAt: new Date().toISOString(),
-								status: "complete",
-							},
-						});
-					}
-				});
+						if (event.type === "message_end" && event.message.role === "assistant") {
+							assistantMessageId ??= randomUUID();
+							writeEvent({
+								type: "message.assistant.done",
+								message: {
+									id: assistantMessageId,
+									role: "assistant",
+									content: extractTextContent(event.message.content),
+									createdAt: new Date().toISOString(),
+									status: "complete",
+								},
+							});
+						}
+					});
 
 					writeEvent({ type: "session.started", sessionId: params.sessionId });
 
 					try {
 						await runtime.session.prompt(body.content);
+						try {
+							const namingSnapshot = await app.sessionStore.getSessionNamingSnapshot(userId, params.sessionId);
+							if (namingSnapshot) {
+								const model =
+									typeof app.piAgentService.getConfiguredModel === "function"
+										? app.piAgentService.getConfiguredModel()
+										: undefined;
+								void app.sessionExecutionQueue
+									.run(params.sessionId, async () => {
+										await app.sessionNamingService.generateTitle(userId, params.sessionId, namingSnapshot);
+									})
+									.catch((error) => {
+										app.log.warn(
+											{
+												err: error,
+												sessionId: params.sessionId,
+												provider: model?.provider,
+												modelId: model?.id,
+											},
+											"session title generation failed",
+										);
+									});
+							}
+						} catch (error) {
+							app.log.warn(
+								{
+									err: error,
+									sessionId: params.sessionId,
+								},
+								"session title generation scheduling failed",
+							);
+						}
 						writeEvent({ type: "session.done", sessionId: params.sessionId });
 					} catch (error) {
 						writeEvent({

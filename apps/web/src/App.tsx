@@ -38,6 +38,7 @@ type SessionActivity = StreamStatus;
 
 const EMPTY_SESSION_LABEL = "(no messages)";
 const DONE_BADGE_TIMEOUT_MS = 2500;
+const FOLLOW_UP_SESSION_REFRESH_DELAY_MS = 250;
 
 function buildLocalMessage(
 	role: "user" | "assistant",
@@ -542,6 +543,7 @@ export function App() {
 	const messageViewportRef = useRef<HTMLDivElement | null>(null);
 	const streamAbortControllersRef = useRef(new Map<string, AbortController>());
 	const activityTimeoutsRef = useRef(new Map<string, number>());
+	const followUpRefreshTimeoutsRef = useRef(new Map<string, number>());
 	const browserSessionIdRef = useRef(`browser-${crypto.randomUUID()}`);
 
 	const clearActivityTimeout = (sessionId: string) => {
@@ -588,6 +590,25 @@ export function App() {
 
 			activityTimeoutsRef.current.set(sessionId, timeoutId);
 		}
+	};
+
+	const clearFollowUpSessionRefresh = (sessionId: string) => {
+		const timeoutId = followUpRefreshTimeoutsRef.current.get(sessionId);
+		if (timeoutId === undefined) {
+			return;
+		}
+
+		window.clearTimeout(timeoutId);
+		followUpRefreshTimeoutsRef.current.delete(sessionId);
+	};
+
+	const scheduleFollowUpSessionRefresh = (sessionId: string) => {
+		clearFollowUpSessionRefresh(sessionId);
+		const timeoutId = window.setTimeout(() => {
+			followUpRefreshTimeoutsRef.current.delete(sessionId);
+			void refreshCurrentSession(sessionId).catch(() => {});
+		}, FOLLOW_UP_SESSION_REFRESH_DELAY_MS);
+		followUpRefreshTimeoutsRef.current.set(sessionId, timeoutId);
 	};
 
 	const upsertSessionDetail = (detail: SessionDetail) => {
@@ -639,8 +660,13 @@ export function App() {
 				window.clearTimeout(timeoutId);
 			}
 
+			for (const timeoutId of followUpRefreshTimeoutsRef.current.values()) {
+				window.clearTimeout(timeoutId);
+			}
+
 			streamAbortControllersRef.current.clear();
 			activityTimeoutsRef.current.clear();
+			followUpRefreshTimeoutsRef.current.clear();
 		};
 	}, []);
 
@@ -864,6 +890,7 @@ export function App() {
 			const remainingSessions = sessions.filter((session) => session.id !== sessionId);
 			setSessions(remainingSessions);
 			clearActivityTimeout(sessionId);
+			clearFollowUpSessionRefresh(sessionId);
 			setSessionActivity(sessionId, null);
 			setSessionDetailsById((current) => {
 				if (!(sessionId in current)) {
@@ -913,6 +940,7 @@ export function App() {
 		setChatError(null);
 
 		const streamingSessionId = selectedSession.id;
+		clearFollowUpSessionRefresh(streamingSessionId);
 
 		const optimistic = createOptimisticDetail(selectedSession, prompt);
 		upsertSessionDetail(optimistic.detail);
@@ -1001,6 +1029,7 @@ export function App() {
 			}
 
 			await refreshCurrentSession(streamingSessionId);
+			scheduleFollowUpSessionRefresh(streamingSessionId);
 			setSessionActivity(streamingSessionId, { phase: "done", label: "Response saved." });
 		} catch (error) {
 			if (abortController.signal.aborted) {

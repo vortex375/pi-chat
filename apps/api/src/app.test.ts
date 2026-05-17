@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "./app.js";
 import type { AppConfig } from "./env.js";
 import { CanvasBuildService } from "./services/canvas-build-service.js";
@@ -11,6 +11,7 @@ import { CanvasRuntimeEventService } from "./services/canvas-runtime-event-servi
 import { CanvasStore } from "./services/canvas-store.js";
 import { PiAgentService } from "./services/pi-agent-service.js";
 import { PiSessionStore } from "./services/pi-session-store.js";
+import { SessionNamingService } from "./services/session-naming-service.js";
 import { SessionExecutionQueue } from "./services/session-execution-queue.js";
 import { WorkspaceTemplateProvisioner } from "./services/workspace-template-provisioner.js";
 import { UserWorkspaceService } from "./services/user-workspace-service.js";
@@ -25,6 +26,7 @@ function createConfigFixture(): {
 	canvasStore: CanvasStore;
 	piAgentService: PiAgentService;
 	sessionStore: PiSessionStore;
+	sessionNamingService: SessionNamingService;
 	sessionExecutionQueue: SessionExecutionQueue;
 	userWorkspaceService: UserWorkspaceService;
 } {
@@ -80,6 +82,11 @@ function createConfigFixture(): {
 		canvasEventBus,
 		canvasBuildService,
 	);
+	const sessionNamingService = {
+		async generateTitle() {
+			return undefined;
+		},
+	} as SessionNamingService;
 	const sessionExecutionQueue = new SessionExecutionQueue();
 
 	return {
@@ -90,6 +97,7 @@ function createConfigFixture(): {
 		canvasStore,
 		piAgentService,
 		sessionStore,
+		sessionNamingService,
 		sessionExecutionQueue,
 		userWorkspaceService,
 	};
@@ -107,6 +115,7 @@ function createTestApp(
 		canvasStore: fixture.canvasStore,
 		piAgentService: fixture.piAgentService,
 		sessionStore: fixture.sessionStore,
+		sessionNamingService: fixture.sessionNamingService,
 		sessionExecutionQueue: fixture.sessionExecutionQueue,
 		userWorkspaceService: fixture.userWorkspaceService,
 		logger: false,
@@ -369,6 +378,123 @@ describe("createApp", () => {
 		expect(detail?.messages).toHaveLength(2);
 		expect(detail?.messages[0]?.content).toBe("Say hello");
 		expect(detail?.messages[1]?.content).toBe("Hello back");
+	});
+
+	it("updates the session title in a background follow-up after the first completed exchange", async () => {
+		const fixture = createConfigFixture();
+		const created = await fixture.sessionStore.createSession("anonymous");
+		let backgroundComplete!: () => void;
+		const backgroundDone = new Promise<void>((resolve) => {
+			backgroundComplete = resolve;
+		});
+		const app = createTestApp(fixture, {
+			piAgentService: createFakeStreamingAgentService(fixture),
+			sessionNamingService: {
+				async generateTitle(userId: string, sessionId: string, snapshot: { firstUserMessage: string; firstAssistantMessage: string }) {
+					expect(snapshot).toEqual({
+						firstUserMessage: "Say hello",
+						firstAssistantMessage: "Hello back",
+					});
+					await fixture.sessionStore.setSessionTitle(userId, sessionId, "Greeting flow");
+					backgroundComplete();
+					return "Greeting flow";
+				},
+			} as SessionNamingService,
+		});
+
+		const response = await app.inject({
+			method: "POST",
+			url: `/api/sessions/${created.id}/messages`,
+			payload: { content: "Say hello" },
+		});
+		await backgroundDone;
+		const detail = await fixture.sessionStore.getSession("anonymous", created.id);
+
+		await app.close();
+
+		expect(response.statusCode).toBe(200);
+		expect(detail?.displayName).toBe("Greeting flow");
+		expect(detail?.name).toBe("Greeting flow");
+	});
+
+	it("does not wait for background title generation before completing the stream", async () => {
+		const fixture = createConfigFixture();
+		const created = await fixture.sessionStore.createSession("anonymous");
+		let releaseTitleGeneration!: () => void;
+		const titleGenerationGate = new Promise<void>((resolve) => {
+			releaseTitleGeneration = resolve;
+		});
+		const app = createTestApp(fixture, {
+			piAgentService: createFakeStreamingAgentService(fixture),
+			sessionNamingService: {
+				async generateTitle() {
+					await titleGenerationGate;
+					return undefined;
+				},
+			} as SessionNamingService,
+		});
+
+		const response = await app.inject({
+			method: "POST",
+			url: `/api/sessions/${created.id}/messages`,
+			payload: { content: "Say hello" },
+		});
+		const events = parseSseEvents(response.body);
+
+		releaseTitleGeneration();
+		await app.close();
+
+		expect(response.statusCode).toBe(200);
+		expect(events.map((event) => event.type)).toContain("session.done");
+		expect(events.map((event) => event.type)).not.toContain("error");
+	});
+
+	it("keeps the fallback title when background title generation fails", async () => {
+		const fixture = createConfigFixture();
+		const created = await fixture.sessionStore.createSession("anonymous");
+		const app = createTestApp(fixture, {
+			piAgentService: createFakeStreamingAgentService(fixture),
+			sessionNamingService: {
+				async generateTitle() {
+					throw new Error("Synthetic title failure");
+				},
+			} as SessionNamingService,
+		});
+
+		const response = await app.inject({
+			method: "POST",
+			url: `/api/sessions/${created.id}/messages`,
+			payload: { content: "Say hello" },
+		});
+		const detail = await fixture.sessionStore.getSession("anonymous", created.id);
+
+		await app.close();
+
+		expect(response.statusCode).toBe(200);
+		expect(detail?.displayName).toBe("Say hello");
+		expect(detail?.name).toBeUndefined();
+	});
+
+	it("keeps the main request successful when title-generation scheduling fails", async () => {
+		const fixture = createConfigFixture();
+		const created = await fixture.sessionStore.createSession("anonymous");
+		vi.spyOn(fixture.sessionStore, "getSessionNamingSnapshot").mockRejectedValue(new Error("snapshot lookup failed"));
+		const app = createTestApp(fixture, {
+			piAgentService: createFakeStreamingAgentService(fixture),
+		});
+
+		const response = await app.inject({
+			method: "POST",
+			url: `/api/sessions/${created.id}/messages`,
+			payload: { content: "Say hello" },
+		});
+		const events = parseSseEvents(response.body);
+
+		await app.close();
+
+		expect(response.statusCode).toBe(200);
+		expect(events.map((event) => event.type)).toContain("session.done");
+		expect(events.map((event) => event.type)).not.toContain("error");
 	});
 
 	it("truncates fallback session titles derived from the first user prompt", async () => {
