@@ -66,14 +66,6 @@ class CanvasCardErrorBoundary extends Component<
 	}
 }
 
-function CanvasCardMountSignal(props: { onMount: () => void }) {
-	useEffect(() => {
-		props.onMount();
-	}, [props.onMount]);
-
-	return null;
-}
-
 function statusClasses(status: CanvasCard["status"]): string {
 	switch (status) {
 		case "ready":
@@ -96,19 +88,25 @@ function CanvasCardFrame(props: {
 	const [runtimeError, setRuntimeError] = useState<string | null>(null);
 	const [moduleState, setModuleState] = useState<"idle" | "loading" | "ready" | "error">("idle");
 	const [isRenderedReady, setIsRenderedReady] = useState(false);
-	const [hasReportedReady, setHasReportedReady] = useState(false);
 	const contentRef = useRef<HTMLDivElement | null>(null);
+	const hasReportedReadyRef = useRef(false);
+	const lastReportedHeightRef = useRef<number | null>(props.card.lastMeasuredHeight ?? null);
 
 	useEffect(() => {
 		setDisplayTitle(props.card.title);
 	}, [props.card.title]);
 
 	useEffect(() => {
+		lastReportedHeightRef.current = props.card.lastMeasuredHeight ?? null;
+	}, [props.card.id, props.card.lastMeasuredHeight]);
+
+	useEffect(() => {
 		if (!props.card.bundleUrl || props.card.status === "build_error") {
 			setLoadedComponent(null);
 			setRuntimeError(null);
 			setIsRenderedReady(false);
-			setHasReportedReady(false);
+			hasReportedReadyRef.current = false;
+			lastReportedHeightRef.current = props.card.lastMeasuredHeight ?? null;
 			setModuleState("idle");
 			return;
 		}
@@ -117,7 +115,8 @@ function CanvasCardFrame(props: {
 		setLoadedComponent(null);
 		setRuntimeError(null);
 		setIsRenderedReady(false);
-		setHasReportedReady(false);
+		hasReportedReadyRef.current = false;
+		lastReportedHeightRef.current = props.card.lastMeasuredHeight ?? null;
 		setModuleState("loading");
 
 		void import(/* @vite-ignore */ props.card.bundleUrl)
@@ -156,24 +155,22 @@ function CanvasCardFrame(props: {
 
 	const host = useMemo<CanvasCardHost>(
 		() => ({
-			ready: () => setIsRenderedReady(true),
+			ready: () => {
+				setIsRenderedReady(true);
+				if (hasReportedReadyRef.current) {
+					return;
+				}
+
+				hasReportedReadyRef.current = true;
+				void postCanvasRuntimeEvent(props.card.id, {
+					type: "ready",
+					browserSessionId: props.browserSessionId,
+				});
+			},
 			setTitle: (title: string) => setDisplayTitle(title),
 		}),
-		[],
+		[props.browserSessionId, props.card.id],
 	);
-
-	const handleMounted = useCallback(() => {
-		setIsRenderedReady(true);
-		if (hasReportedReady) {
-			return;
-		}
-
-		setHasReportedReady(true);
-		void postCanvasRuntimeEvent(props.card.id, {
-			type: "ready",
-			browserSessionId: props.browserSessionId,
-		});
-	}, [hasReportedReady, props.browserSessionId, props.card.id]);
 
 	useEffect(() => {
 		const element = contentRef.current;
@@ -183,6 +180,11 @@ function CanvasCardFrame(props: {
 
 		const observer = new ResizeObserver((entries) => {
 			const height = Math.round(entries[0]?.contentRect.height ?? element.getBoundingClientRect().height);
+			if (lastReportedHeightRef.current === height) {
+				return;
+			}
+
+			lastReportedHeightRef.current = height;
 			void postCanvasRuntimeEvent(props.card.id, {
 				type: "resize",
 				height,
@@ -233,7 +235,6 @@ function CanvasCardFrame(props: {
 							});
 						}}
 					>
-						<CanvasCardMountSignal onMount={handleMounted} />
 						<LoadedComponent cardId={props.card.id} data={props.card.props} host={host} />
 					</CanvasCardErrorBoundary>
 				) : runtimeError ? (

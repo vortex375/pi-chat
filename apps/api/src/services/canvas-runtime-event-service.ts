@@ -69,9 +69,25 @@ export class CanvasRuntimeEventService {
 			return { acknowledged: false, diagnostics: [] };
 		}
 
-		const now = new Date().toISOString();
 		const currentDiagnostics = (await this.canvasStore.readDiagnostics(userId, cardId))[cardId] ?? [];
 		const nextDiagnostics = currentDiagnostics.filter((diagnostic) => diagnostic.stage !== "runtime");
+		const hasRuntimeDiagnostics = nextDiagnostics.length !== currentDiagnostics.length;
+
+		if (existingCard.status === "ready" && !hasRuntimeDiagnostics) {
+			this.canvasEventBus.notifyCardReady(
+				userId,
+				cardId,
+				browserSessionId,
+				existingCard.lastReadyAt ?? existingCard.updatedAt,
+			);
+			return {
+				acknowledged: true,
+				card: existingCard,
+				diagnostics: nextDiagnostics,
+			};
+		}
+
+		const now = new Date().toISOString();
 		await this.canvasStore.writeDiagnostics(userId, cardId, nextDiagnostics);
 
 		const nextCard: CanvasCard = {

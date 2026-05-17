@@ -103,6 +103,15 @@ function upsertCanvasCard(cards: CanvasCard[], nextCard: CanvasCard): CanvasCard
 	return [nextCard, ...cards.filter((card) => card.id !== nextCard.id)];
 }
 
+function replaceCanvasCard(cards: CanvasCard[], nextCard: CanvasCard): CanvasCard[] {
+	const existingIndex = cards.findIndex((card) => card.id === nextCard.id);
+	if (existingIndex === -1) {
+		return [nextCard, ...cards];
+	}
+
+	return cards.map((card) => (card.id === nextCard.id ? nextCard : card));
+}
+
 function updateAssistantMessage(detail: SessionDetail, assistantId: string, updater: (message: ChatMessage) => ChatMessage): SessionDetail {
 	return {
 		...detail,
@@ -679,9 +688,10 @@ export function App() {
 		}
 
 		if (event.type === "canvas.card.published" || event.type === "canvas.card.updated") {
+			const updateCards = event.type === "canvas.card.published" ? upsertCanvasCard : replaceCanvasCard;
 			setCanvasSnapshot((current) => ({
 				...current,
-				cards: upsertCanvasCard(current.cards, event.card),
+				cards: updateCards(current.cards, event.card),
 			}));
 			setCanvasState("ready");
 			return;

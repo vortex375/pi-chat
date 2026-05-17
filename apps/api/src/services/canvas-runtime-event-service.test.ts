@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CanvasEventBus } from "./canvas-event-bus.js";
 import { CanvasRuntimeEventService } from "./canvas-runtime-event-service.js";
 import { CanvasStore } from "./canvas-store.js";
@@ -76,6 +76,34 @@ describe("CanvasRuntimeEventService", () => {
 		expect(eventResult.acknowledged).toBe(true);
 		expect(storedCard?.status).toBe("ready");
 		expect(storedCard?.lastReadyAt).toBeDefined();
+	});
+
+	it("does not republish already ready cards when a browser reloads them", async () => {
+		const fixture = createFixture();
+		const now = new Date("2026-05-14T12:00:00.000Z").toISOString();
+		await fixture.canvasStore.upsertCard("anonymous", {
+			id: "card-ready",
+			title: "Ready card",
+			componentPath: "canvas/cards/ready-card.tsx",
+			status: "ready",
+			createdAt: now,
+			updatedAt: now,
+			lastPublishedAt: now,
+			lastReadyAt: now,
+			bundleUrl: "/api/canvas/cards/card-ready/bundle.js",
+		});
+
+		const publishSpy = vi.spyOn(fixture.canvasEventBus, "publish");
+		const result = await fixture.canvasRuntimeEventService.handleEvent("anonymous", "card-ready", {
+			type: "ready",
+			browserSessionId: "browser-a",
+		});
+		const storedCard = await fixture.canvasStore.getCard("anonymous", "card-ready");
+
+		expect(result.acknowledged).toBe(true);
+		expect(result.card).toEqual(storedCard);
+		expect(storedCard?.lastReadyAt).toBe(now);
+		expect(publishSpy).not.toHaveBeenCalled();
 	});
 
 	it("persists runtime diagnostics and updates card status", async () => {
