@@ -25,6 +25,7 @@ import {
 	streamSessionMessage,
 } from "./api";
 import { CanvasPanel } from "./components/CanvasPanel";
+import { ActionIconButton, PanelIcon, PencilIcon, PlusIcon, TrashIcon } from "./components/IconButton";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 type StreamPhase = "idle" | "connecting" | "streaming" | "done" | "error";
@@ -39,6 +40,12 @@ type SessionActivity = StreamStatus;
 const EMPTY_SESSION_LABEL = "(no messages)";
 const DONE_BADGE_TIMEOUT_MS = 2500;
 const FOLLOW_UP_SESSION_REFRESH_DELAY_MS = 250;
+const CHROME_BUTTON_CLASS =
+	"inline-flex items-center justify-center rounded-full border border-white/12 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-stone-300 transition hover:border-white/28 hover:text-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60 disabled:cursor-not-allowed disabled:opacity-40";
+const PRIMARY_BUTTON_CLASS =
+	"inline-flex items-center justify-center rounded-full bg-amber-300 px-3.5 py-2 text-sm font-semibold text-stone-950 transition hover:bg-amber-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60 disabled:cursor-not-allowed disabled:opacity-45";
+const STATUS_PILL_CLASS =
+	"inline-flex min-w-0 items-center gap-2 rounded-full border border-white/10 bg-black/30 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-stone-300";
 
 function buildLocalMessage(
 	role: "user" | "assistant",
@@ -190,40 +197,39 @@ function SessionSidebar(props: {
 	onDeleteSession: (sessionId: string) => void;
 }) {
 	return (
-		<aside className="flex max-h-[45dvh] w-full flex-col rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(31,24,20,0.96),rgba(17,14,12,0.98))] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.35)] lg:max-h-none lg:max-w-[19rem]">
-			<div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+		<aside className="flex max-h-[38dvh] w-full flex-col rounded-[1.25rem] border border-white/10 bg-[linear-gradient(180deg,rgba(28,22,18,0.96),rgba(14,11,10,0.98))] p-3 shadow-[0_22px_72px_rgba(0,0,0,0.28)] lg:h-full lg:max-h-none lg:max-w-[17rem]">
+			<div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3">
 				<div>
-					<p className="text-xs uppercase tracking-[0.35em] text-amber-300/80">Pi Chat</p>
-					<h1 className="mt-2 text-2xl font-semibold tracking-tight text-stone-50">Sessions</h1>
+					<p className="text-[10px] uppercase tracking-[0.32em] text-amber-300/80">Pi Chat</p>
+					<h1 className="mt-1.5 text-xl font-semibold tracking-tight text-stone-50">Sessions</h1>
+					<p className="mt-1 text-sm text-stone-400">{props.sessions.length} active threads</p>
 				</div>
-				<button
-					type="button"
+				<ActionIconButton
+					label="New session"
+					title="Create new session"
 					onClick={props.onCreateSession}
 					disabled={props.isCreating}
-					className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3.5 py-1.5 text-sm font-medium text-amber-100 transition hover:border-amber-200/50 hover:bg-amber-300/20 disabled:cursor-not-allowed disabled:opacity-40"
+					variant="accent"
 				>
-					{props.isCreating ? "Creating..." : "New session"}
-				</button>
+					{props.isCreating ? <span className="text-xs leading-none">...</span> : <PlusIcon className="h-3.5 w-3.5" />}
+				</ActionIconButton>
 			</div>
 
 			{props.errorMessage ? (
-				<p className="mt-4 rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+				<p className="mt-3 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-200">
 					{props.errorMessage}
 				</p>
 			) : null}
 
-			<div className="mt-4 flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-1">
+			<div className="mt-3 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
 				{props.isLoading ? (
-					<div className="space-y-3">
+					<div className="space-y-2">
 						{Array.from({ length: 4 }, (_, index) => (
-							<div
-								key={index}
-								className="h-20 animate-pulse rounded-[1.5rem] border border-white/8 bg-white/5"
-							/>
+							<div key={index} className="h-16 animate-pulse rounded-[1rem] border border-white/8 bg-white/5" />
 						))}
 					</div>
 				) : props.sessions.length === 0 ? (
-					<div className="rounded-[1.75rem] border border-dashed border-white/12 bg-white/4 px-5 py-8 text-center text-sm leading-6 text-stone-400">
+					<div className="rounded-[1rem] border border-dashed border-white/12 bg-white/4 px-4 py-6 text-center text-sm leading-6 text-stone-400">
 						Create the first session to start a workspace-backed conversation.
 					</div>
 				) : (
@@ -235,40 +241,39 @@ function SessionSidebar(props: {
 						return (
 							<div
 								key={session.id}
-								className={`flex items-start gap-3 rounded-[1.4rem] border px-3.5 py-3 transition ${
+								className={`grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-[1rem] border px-3 py-2.5 transition ${
 									isSelected
-										? "border-amber-300/40 bg-amber-300/12 text-stone-50 shadow-[0_12px_40px_rgba(245,158,11,0.12)]"
+										? "border-amber-300/40 bg-amber-300/10 text-stone-50 shadow-[0_10px_30px_rgba(245,158,11,0.12)]"
 										: "border-white/8 bg-white/4 text-stone-200 hover:border-white/14 hover:bg-white/7"
 								}`}
 							>
 								<button
 									type="button"
 									onClick={() => props.onSelectSession(session.id)}
-									className="min-w-0 flex-1 text-left"
+									className="min-w-0 flex-1 text-left focus-visible:outline-none"
 								>
-									<div className="flex items-start justify-between gap-3">
-										<div className="min-w-0">
-											<p className="line-clamp-2 text-sm font-medium leading-6">{session.displayName}</p>
-											<p className="mt-1 line-clamp-2 text-xs leading-5 text-stone-400">{session.firstMessage}</p>
+									<div className="min-w-0">
+										<p className="line-clamp-2 text-sm font-medium leading-5">{session.displayName}</p>
+										<p className="mt-1.5 line-clamp-2 text-[12px] leading-5 text-stone-400">
+											{session.firstMessage}
+										</p>
+										<div className="mt-2 flex min-w-0 items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-stone-500">
+											{activity ? (
+												<span
+													title={activity.label}
+													className={`h-2.5 w-2.5 shrink-0 rounded-full ${sessionBadgeTone(activity.phase)} ${hasLiveStream(activity) ? "animate-pulse" : ""}`}
+												>
+													<span className="sr-only">{activity.phase}</span>
+												</span>
+											) : null}
+											<span className="truncate">{formatTime(session.modifiedAt)}</span>
 										</div>
 									</div>
 								</button>
-								<div className="flex shrink-0 flex-col items-end gap-2">
-									<div className="flex items-center gap-2">
-										{activity ? (
-											<span
-												title={activity.label}
-												className={`h-2.5 w-2.5 rounded-full ${sessionBadgeTone(activity.phase)} ${hasLiveStream(activity) ? "animate-pulse" : ""}`}
-											>
-												<span className="sr-only">{activity.phase}</span>
-											</span>
-										) : null}
-										<p className="text-[11px] uppercase tracking-[0.2em] text-stone-500">
-											{formatTime(session.modifiedAt)}
-										</p>
-									</div>
-									<button
-										type="button"
+								<div className="flex shrink-0 items-start">
+									<ActionIconButton
+										label={`Delete ${session.displayName}`}
+										title="Delete session"
 										onClick={() => {
 											if (!confirmDeleteSession(session.displayName)) {
 												return;
@@ -277,11 +282,10 @@ function SessionSidebar(props: {
 											props.onDeleteSession(session.id);
 										}}
 										disabled={isDeleting || isStreaming}
-										aria-label={`Delete ${session.displayName}`}
-										className="rounded-full border border-rose-400/25 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-rose-200 transition hover:border-rose-300/45 hover:text-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+										variant="danger"
 									>
-										{isDeleting ? "Deleting..." : "Delete"}
-									</button>
+										{isDeleting ? <span className="text-xs leading-none">...</span> : <TrashIcon className="h-3.5 w-3.5" />}
+									</ActionIconButton>
 								</div>
 							</div>
 						);
@@ -295,63 +299,38 @@ function SessionSidebar(props: {
 function EditableSessionTitle(props: {
 	value: string;
 	displayName: string;
-	disabled: boolean;
 	pending: boolean;
-	isDeleting: boolean;
+	isEditing: boolean;
 	errorMessage: string | null;
 	onRename: (name: string) => Promise<void>;
-	onDelete: () => Promise<void>;
+	onCancelEdit: () => void;
 }) {
-	const [isEditing, setIsEditing] = useState(false);
 	const [draft, setDraft] = useState(props.value || props.displayName);
 
 	useEffect(() => {
 		setDraft(props.value || props.displayName);
-		setIsEditing(false);
-	}, [props.displayName, props.value]);
+	}, [props.displayName, props.value, props.isEditing]);
 
-	if (!isEditing) {
+	if (!props.isEditing) {
 		return (
-			<div>
-				<div className="flex items-center gap-3">
-					<h2 className="text-xl font-semibold tracking-tight text-stone-50 sm:text-2xl">{props.displayName}</h2>
-					<button
-						type="button"
-						onClick={() => setIsEditing(true)}
-						disabled={props.disabled}
-						className="rounded-full border border-white/12 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-stone-300 transition hover:border-white/30 hover:text-stone-100 disabled:cursor-not-allowed disabled:opacity-40"
-					>
-						Rename
-					</button>
-					<button
-						type="button"
-						onClick={() => {
-							if (!confirmDeleteSession(props.displayName)) {
-								return;
-							}
-
-							void props.onDelete().catch(() => {});
-						}}
-						disabled={props.disabled || props.pending || props.isDeleting}
-						className="rounded-full border border-rose-400/25 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-rose-200 transition hover:border-rose-300/45 hover:text-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
-					>
-						{props.isDeleting ? "Deleting..." : "Delete"}
-					</button>
-				</div>
-				{props.errorMessage ? <p className="mt-3 text-sm text-rose-300">{props.errorMessage}</p> : null}
+			<div className="min-w-0">
+				<h2 className="line-clamp-2 break-words text-lg font-semibold tracking-tight text-stone-50 sm:text-xl">
+					{props.displayName}
+				</h2>
+				{props.errorMessage ? <p className="mt-2 text-sm text-rose-300">{props.errorMessage}</p> : null}
 			</div>
 		);
 	}
 
 	return (
 		<form
-			className="flex flex-col gap-3 sm:flex-row sm:items-center"
+			className="flex flex-col gap-2.5 md:flex-row md:items-center"
 			onSubmit={(event) => {
 				event.preventDefault();
-					void props
-						.onRename(draft)
-						.then(() => setIsEditing(false))
-						.catch(() => {});
+				void props
+					.onRename(draft)
+					.then(() => props.onCancelEdit())
+					.catch(() => {});
 			}}
 		>
 			<input
@@ -359,14 +338,14 @@ function EditableSessionTitle(props: {
 				value={draft}
 				onChange={(event) => setDraft(event.target.value)}
 				disabled={props.pending}
-				className="w-full rounded-full border border-white/12 bg-black/20 px-4 py-3 text-base text-stone-50 outline-none transition focus:border-amber-300/60"
+				className="w-full rounded-full border border-white/12 bg-black/20 px-3.5 py-2.5 text-sm text-stone-50 outline-none transition focus:border-amber-300/60 focus-visible:ring-2 focus-visible:ring-amber-300/60"
 				placeholder="Session title"
 			/>
 			<div className="flex items-center gap-2">
 				<button
 					type="submit"
 					disabled={props.pending}
-					className="rounded-full bg-amber-300 px-4 py-2 text-sm font-semibold text-stone-950 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+					className={PRIMARY_BUTTON_CLASS}
 				>
 					{props.pending ? "Saving..." : "Save"}
 				</button>
@@ -374,15 +353,15 @@ function EditableSessionTitle(props: {
 					type="button"
 					onClick={() => {
 						setDraft(props.value || props.displayName);
-						setIsEditing(false);
+						props.onCancelEdit();
 					}}
 					disabled={props.pending}
-					className="rounded-full border border-white/12 px-4 py-2 text-sm text-stone-300 transition hover:border-white/24 hover:text-stone-100 disabled:cursor-not-allowed disabled:opacity-40"
+					className={`${CHROME_BUTTON_CLASS} px-3.5 py-2 normal-case tracking-normal text-sm`}
 				>
 					Cancel
 				</button>
 			</div>
-			{props.errorMessage ? <p className="text-sm text-rose-300 sm:basis-full">{props.errorMessage}</p> : null}
+			{props.errorMessage ? <p className="text-sm text-rose-300 md:basis-full">{props.errorMessage}</p> : null}
 		</form>
 	);
 }
@@ -412,13 +391,13 @@ function MarkdownMessage(props: { content: string; tone: "user" | "assistant" | 
 		<ReactMarkdown
 			remarkPlugins={[remarkGfm]}
 			components={{
-				p: ({ node, ...rest }) => <p className="mt-3 first:mt-0" {...rest} />,
-				ul: ({ node, ...rest }) => <ul className="mt-3 list-disc space-y-2 pl-5 first:mt-0" {...rest} />,
-				ol: ({ node, ...rest }) => <ol className="mt-3 list-decimal space-y-2 pl-5 first:mt-0" {...rest} />,
+				p: ({ node, ...rest }) => <p className="mt-2.5 first:mt-0" {...rest} />,
+				ul: ({ node, ...rest }) => <ul className="mt-2.5 list-disc space-y-1.5 pl-5 first:mt-0" {...rest} />,
+				ol: ({ node, ...rest }) => <ol className="mt-2.5 list-decimal space-y-1.5 pl-5 first:mt-0" {...rest} />,
 				li: ({ node, ...rest }) => <li className="pl-1" {...rest} />,
-				blockquote: ({ node, ...rest }) => <blockquote className={`mt-3 border-l-2 pl-4 italic first:mt-0 ${quoteClassName}`} {...rest} />,
+				blockquote: ({ node, ...rest }) => <blockquote className={`mt-2.5 border-l-2 pl-4 italic first:mt-0 ${quoteClassName}`} {...rest} />,
 				a: ({ node, ...rest }) => <a className={linkClassName} target="_blank" rel="noreferrer" {...rest} />,
-				pre: ({ node, ...rest }) => <pre className={`mt-3 overflow-x-auto rounded-2xl p-4 first:mt-0 ${blockClassName}`} {...rest} />,
+				pre: ({ node, ...rest }) => <pre className={`mt-2.5 overflow-x-auto rounded-xl p-3.5 first:mt-0 ${blockClassName}`} {...rest} />,
 				code: ({ node, className, children, ...rest }) => {
 					if (className) {
 						return (
@@ -434,10 +413,10 @@ function MarkdownMessage(props: { content: string; tone: "user" | "assistant" | 
 						</code>
 					);
 				},
-				hr: ({ node, ...rest }) => <hr className="my-4 border-white/10 first:mt-0" {...rest} />,
-				table: ({ node, ...rest }) => <table className="mt-3 w-full border-collapse text-left first:mt-0" {...rest} />,
-				th: ({ node, ...rest }) => <th className="border-b border-white/10 px-3 py-2 font-semibold" {...rest} />,
-				td: ({ node, ...rest }) => <td className="border-b border-white/10 px-3 py-2 align-top" {...rest} />,
+				hr: ({ node, ...rest }) => <hr className="my-3 border-white/10 first:mt-0" {...rest} />,
+				table: ({ node, ...rest }) => <table className="mt-2.5 w-full border-collapse text-left first:mt-0" {...rest} />,
+				th: ({ node, ...rest }) => <th className="border-b border-white/10 px-2.5 py-2 font-semibold" {...rest} />,
+				td: ({ node, ...rest }) => <td className="border-b border-white/10 px-2.5 py-2 align-top" {...rest} />,
 			}}
 		>
 			{props.content}
@@ -454,7 +433,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 	return (
 		<div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
 			<div
-				className={`max-w-[85%] rounded-[1.75rem] px-4 py-3 shadow-[0_14px_40px_rgba(0,0,0,0.18)] sm:max-w-[75%] ${
+				className={`max-w-[92%] rounded-[1.25rem] px-3.5 py-2.5 shadow-[0_10px_28px_rgba(0,0,0,0.16)] sm:max-w-[82%] xl:max-w-[76%] ${
 					isUser
 						? "rounded-br-md bg-amber-300 text-stone-950"
 						: isError
@@ -462,10 +441,10 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 							: "rounded-bl-md border border-white/10 bg-white/6 text-stone-100"
 				}`}
 			>
-				<div className="text-sm leading-7 sm:text-[15px]">
+				<div className="text-sm leading-6 sm:text-[15px] sm:leading-7">
 					<MarkdownMessage content={messageContent} tone={messageTone} />
 				</div>
-				<div className={`mt-3 flex items-center justify-between gap-4 text-[11px] uppercase tracking-[0.22em] ${isUser ? "text-stone-700/80" : "text-stone-500"}`}>
+				<div className={`mt-2.5 flex items-center justify-between gap-4 text-[10px] uppercase tracking-[0.18em] ${isUser ? "text-stone-700/80" : "text-stone-500"}`}>
 					<span>{message.role}</span>
 					<div className="flex items-center gap-2">
 						{isStreaming ? <span className="h-2 w-2 rounded-full bg-amber-300 animate-pulse" /> : null}
@@ -498,7 +477,7 @@ function Composer(props: {
 	}, [props.value]);
 
 	return (
-		<div className="rounded-[1.35rem] border border-white/10 bg-black/20 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.22)]">
+		<div className="rounded-[1.1rem] border border-white/10 bg-black/20 p-1.5 shadow-[0_18px_55px_rgba(0,0,0,0.2)]">
 			<textarea
 				ref={textareaRef}
 				value={props.value}
@@ -512,15 +491,17 @@ function Composer(props: {
 				disabled={props.disabled}
 				placeholder="Send a prompt into the workspace..."
 				rows={1}
-				className="w-full resize-none bg-transparent px-2.5 py-2 text-sm leading-6 text-stone-100 outline-none placeholder:text-stone-500"
+				className="w-full resize-none bg-transparent px-2 py-2 text-sm leading-6 text-stone-100 outline-none placeholder:text-stone-500"
 			/>
 			<div className="flex items-center justify-between gap-3 border-t border-white/8 px-2 py-1.5">
-				<p className="text-[11px] uppercase tracking-[0.22em] text-stone-500">Enter to send, Shift+Enter for a new line</p>
+				<p className="text-[10px] uppercase tracking-[0.18em] text-stone-500">
+					Enter to send, Shift+Enter for a new line
+				</p>
 				<button
 					type="button"
 					onClick={props.onSubmit}
 					disabled={props.disabled || props.value.trim().length === 0}
-					className="rounded-full bg-amber-300 px-4 py-2 text-sm font-semibold text-stone-950 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-45"
+					className={PRIMARY_BUTTON_CLASS}
 				>
 					Send
 				</button>
@@ -541,6 +522,7 @@ export function App() {
 	const [chatError, setChatError] = useState<string | null>(null);
 	const [sessionActionError, setSessionActionError] = useState<string | null>(null);
 	const [isCreatingSession, setIsCreatingSession] = useState(false);
+	const [isEditingSessionTitle, setIsEditingSessionTitle] = useState(false);
 	const [isRenamingSession, setIsRenamingSession] = useState(false);
 	const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
 	const [isScrollPinned, setIsScrollPinned] = useState(true);
@@ -762,6 +744,10 @@ export function App() {
 			});
 		}
 	}, [selectedSessionId, sessions]);
+
+	useEffect(() => {
+		setIsEditingSessionTitle(false);
+	}, [selectedSessionId]);
 
 	useEffect(() => {
 		if (!selectedSessionId) {
@@ -1061,10 +1047,10 @@ export function App() {
 	const isSelectedSessionStreaming = hasLiveStream(selectedSessionActivity);
 
 	return (
-		<div className="flex min-h-dvh overflow-y-auto bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.14),_transparent_28%),linear-gradient(180deg,_#1a1410_0%,_#0b0907_100%)] px-3 py-3 text-stone-100 sm:px-4 sm:py-4 lg:h-dvh lg:overflow-hidden lg:px-5 lg:py-5">
+		<div className="flex min-h-dvh overflow-y-auto bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.1),_transparent_24%),linear-gradient(180deg,_#18120f_0%,_#0b0907_100%)] px-2 py-2 text-stone-100 sm:px-3 sm:py-3 lg:h-dvh lg:overflow-hidden lg:px-3.5 lg:py-3.5">
 			<div
-				className={`mx-auto flex w-full max-w-[96rem] flex-col gap-3 lg:min-h-0 lg:flex-1 lg:grid ${
-					isCanvasOpen ? "lg:grid-cols-[19rem_minmax(0,1fr)_24rem]" : "lg:grid-cols-[19rem_minmax(0,1fr)]"
+				className={`mx-auto flex w-full max-w-[110rem] flex-col gap-2.5 lg:min-h-0 lg:flex-1 lg:grid ${
+					isCanvasOpen ? "lg:grid-cols-[17rem_minmax(0,1fr)_20.5rem]" : "lg:grid-cols-[17rem_minmax(0,1fr)]"
 				}`}
 			>
 				<div className="order-2 lg:order-1 lg:min-h-0">
@@ -1082,52 +1068,93 @@ export function App() {
 					/>
 				</div>
 
-				<main className="order-1 relative flex min-h-[24rem] shrink-0 flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.14),_transparent_38%),linear-gradient(180deg,_rgba(28,23,19,0.98),_rgba(12,10,9,0.98))] shadow-[0_30px_90px_rgba(0,0,0,0.32)] lg:order-2 lg:min-h-0">
-					<div className="absolute right-3 top-3 z-10 rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[11px] tracking-[0.02em] text-stone-300 backdrop-blur-sm sm:right-4 sm:top-4">
-						<span className={`font-medium uppercase tracking-[0.18em] ${statusTone(selectedStreamStatus.phase)}`}>{selectedStreamStatus.phase}</span>
-						<span className="mx-1.5 text-stone-500">/</span>
-						<span>{selectedStreamStatus.label}</span>
-					</div>
-					<div className="border-b border-white/10 px-4 py-3 sm:px-5 sm:py-3">
-						<div className="flex items-start justify-between gap-4 pr-24">
-							<div>
-								<p className="text-xs uppercase tracking-[0.35em] text-stone-400">Conversation</p>
+				<main className="order-1 flex min-h-[24rem] shrink-0 flex-col overflow-hidden rounded-[1.25rem] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.1),_transparent_34%),linear-gradient(180deg,_rgba(26,21,18,0.98),_rgba(11,9,8,0.98))] shadow-[0_24px_80px_rgba(0,0,0,0.28)] lg:order-2 lg:min-h-0">
+					<div className="border-b border-white/10 px-3.5 py-3 sm:px-4">
+						<div className="flex flex-wrap items-start justify-between gap-2.5">
+							<div className="min-w-0 flex-1">
+								<div className="flex flex-wrap items-center gap-2">
+									<p className="text-[10px] uppercase tracking-[0.3em] text-stone-400">Conversation</p>
+									<div className={STATUS_PILL_CLASS}>
+										<span className={`shrink-0 font-medium ${statusTone(selectedStreamStatus.phase)}`}>
+											{selectedStreamStatus.phase}
+										</span>
+										<span className="truncate normal-case tracking-normal text-stone-400">
+											{selectedStreamStatus.label}
+										</span>
+									</div>
+								</div>
 								{selectedSessionDisplay ? (
-									<div className="mt-2.5">
+									<div className="mt-2">
 										<EditableSessionTitle
 											value={selectedSessionDisplay.name ?? ""}
 											displayName={selectedSessionDisplay.displayName}
-											disabled={isSelectedSessionStreaming}
 											pending={isRenamingSession}
-											isDeleting={deletingSessionId === selectedSessionDisplay.id}
+											isEditing={isEditingSessionTitle}
 											errorMessage={sessionActionError}
 											onRename={handleRenameSession}
-											onDelete={() => handleDeleteSession(selectedSessionDisplay.id)}
+											onCancelEdit={() => setIsEditingSessionTitle(false)}
 										/>
 									</div>
 								) : (
-									<div className="mt-2.5 max-w-2xl">
-										<h2 className="text-2xl font-semibold tracking-tight text-stone-50 sm:text-3xl">Build from the plan, not from stubs.</h2>
-										<p className="mt-2 text-sm leading-6 text-stone-300">
+									<div className="mt-2 max-w-2xl">
+										<h2 className="text-xl font-semibold tracking-tight text-stone-50 sm:text-2xl">
+											Build from the plan, not from stubs.
+										</h2>
+										<p className="mt-1.5 text-sm leading-6 text-stone-300">
 											Create a session to start chatting with the request-scoped Pi runtime.
 										</p>
 									</div>
 								)}
 							</div>
-							<button
-								type="button"
-								onClick={() => setIsCanvasOpen((current) => !current)}
-								className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3.5 py-2 text-[11px] font-medium uppercase tracking-[0.2em] text-cyan-100 transition hover:border-cyan-200/45 hover:bg-cyan-300/20"
-							>
-								{isCanvasOpen ? "Hide canvas" : "Open canvas"}
-							</button>
+							<div className="flex items-center gap-2 self-start">
+								{selectedSessionDisplay && !isEditingSessionTitle ? (
+									<div className="flex items-center gap-1.5 border-r border-white/12 pr-2">
+										<ActionIconButton
+											label="Rename"
+											title="Rename session"
+											onClick={() => setIsEditingSessionTitle(true)}
+											disabled={isSelectedSessionStreaming}
+										>
+											<PencilIcon className="h-3.5 w-3.5" />
+										</ActionIconButton>
+										<ActionIconButton
+											label="Delete"
+											title="Delete session"
+											onClick={() => {
+												if (!confirmDeleteSession(selectedSessionDisplay.displayName)) {
+													return;
+												}
+
+												void handleDeleteSession(selectedSessionDisplay.id);
+											}}
+											disabled={isSelectedSessionStreaming || isRenamingSession || deletingSessionId === selectedSessionDisplay.id}
+											variant="danger"
+										>
+											{deletingSessionId === selectedSessionDisplay.id ? (
+												<span className="text-xs leading-none">...</span>
+											) : (
+												<TrashIcon className="h-3.5 w-3.5" />
+											)}
+										</ActionIconButton>
+									</div>
+								) : null}
+								<ActionIconButton
+									label={isCanvasOpen ? "Hide canvas" : "Open canvas"}
+									title={isCanvasOpen ? "Hide canvas" : "Open canvas"}
+									onClick={() => setIsCanvasOpen((current) => !current)}
+									variant="accent"
+								>
+									<PanelIcon className="h-3.5 w-3.5" />
+								</ActionIconButton>
+							</div>
 						</div>
 					</div>
 
-					<div className="flex min-h-0 flex-1 flex-col px-2.5 pb-2.5 pt-2.5 sm:px-3.5 sm:pb-3.5 sm:pt-3">
-
+					<div className="flex min-h-0 flex-1 flex-col px-2 pb-2 pt-2 sm:px-3 sm:pb-3 sm:pt-2.5">
 						{chatError || selectedStreamError ? (
-							<p className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{chatError ?? selectedStreamError}</p>
+							<p className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-200">
+								{chatError ?? selectedStreamError}
+							</p>
 						) : null}
 
 						<div
@@ -1137,32 +1164,36 @@ export function App() {
 								const remaining = element.scrollHeight - element.scrollTop - element.clientHeight;
 								setIsScrollPinned(remaining < 40);
 							}}
-							className={`${chatError || selectedStreamError ? "mt-3" : "mt-0"} flex min-h-0 flex-1 flex-col overflow-y-auto rounded-[1.5rem] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] px-2.5 py-3 sm:px-4`}
+							className={`${chatError || selectedStreamError ? "mt-2.5" : "mt-0"} flex min-h-0 flex-1 flex-col overflow-y-auto rounded-[1.1rem] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] px-3 py-3`}
 						>
 							{selectedSessionState === "loading" ? (
-								<div className="space-y-4">
+								<div className="space-y-3">
 									{Array.from({ length: 4 }, (_, index) => (
-										<div key={index} className="h-24 animate-pulse rounded-[1.6rem] border border-white/8 bg-white/5" />
+										<div key={index} className="h-20 animate-pulse rounded-[1.1rem] border border-white/8 bg-white/5" />
 									))}
 								</div>
 							) : !selectedSessionDisplay ? (
-								<div className="m-auto max-w-xl px-6 text-center">
-									<p className="text-xs uppercase tracking-[0.28em] text-amber-300/70">Workspace chat</p>
-									<h3 className="mt-4 text-3xl font-semibold tracking-tight text-stone-50">Session list on the left, live transcript on the right.</h3>
-									<p className="mt-4 text-base leading-7 text-stone-400">
+								<div className="m-auto max-w-xl px-5 text-center">
+									<p className="text-[10px] uppercase tracking-[0.28em] text-amber-300/70">Workspace chat</p>
+									<h3 className="mt-3 text-2xl font-semibold tracking-tight text-stone-50">
+										Session list on the left, live transcript in the center.
+									</h3>
+									<p className="mt-3 text-sm leading-6 text-stone-400">
 										The UI now speaks the same DTOs as the backend and is ready for real session traffic.
 									</p>
 								</div>
 							) : selectedSessionDisplay.messages.length === 0 ? (
-								<div className="m-auto max-w-lg px-6 text-center">
-									<p className="text-xs uppercase tracking-[0.28em] text-stone-500">Empty transcript</p>
-									<h3 className="mt-4 text-2xl font-semibold text-stone-50">Start with a prompt about the workspace.</h3>
-									<p className="mt-4 text-base leading-7 text-stone-400">
+								<div className="m-auto max-w-lg px-5 text-center">
+									<p className="text-[10px] uppercase tracking-[0.28em] text-stone-500">Empty transcript</p>
+									<h3 className="mt-3 text-xl font-semibold text-stone-50">
+										Start with a prompt about the workspace.
+									</h3>
+									<p className="mt-3 text-sm leading-6 text-stone-400">
 										Your first message becomes the fallback session title until you rename it.
 									</p>
 								</div>
 							) : (
-								<div className="space-y-3 pb-1">
+								<div className="space-y-2.5 pb-1">
 									{selectedSessionDisplay.messages.map((message) => (
 										<MessageBubble key={message.id} message={message} />
 									))}
@@ -1170,7 +1201,7 @@ export function App() {
 							)}
 						</div>
 
-						<div className="mt-3">
+						<div className="mt-2.5">
 							<Composer
 								value={composerValue}
 								onChange={setComposerValue}
@@ -1189,7 +1220,7 @@ export function App() {
 							onClick={() => setIsCanvasOpen(false)}
 							className="fixed inset-0 z-10 bg-black/45 backdrop-blur-[1px] lg:hidden"
 						/>
-						<div className="fixed inset-y-3 right-3 z-20 w-[min(24rem,calc(100vw-1.5rem))] lg:static lg:z-auto lg:min-h-0 lg:w-auto">
+						<div className="fixed inset-y-2 right-2 z-20 w-[min(21rem,calc(100vw-1rem))] lg:order-3 lg:static lg:z-auto lg:min-h-0 lg:w-auto">
 							<CanvasPanel
 								browserSessionId={browserSessionIdRef.current}
 								cards={canvasSnapshot.cards}
